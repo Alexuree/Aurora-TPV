@@ -3,7 +3,7 @@
 // se ha añadido a la venta. Si se escanea otro, este se añade solo.
 // =====================================================================
 
-import { Barcode, Check, ImageOff, Plus, X } from 'lucide-react';
+import { Barcode, Check, ImageOff, X } from 'lucide-react';
 import type { Product } from '@/domain/types';
 import { formatMoney } from '@/domain/money';
 import { Button } from '@/components/ui';
@@ -15,7 +15,6 @@ interface Props {
 }
 
 export function PendingProductCard({ product, onAdd, onDiscard }: Props) {
-  const out = product.trackStock && product.stock <= 0;
   return (
     <div className="animate-pop-in flex items-center gap-4 rounded-2xl border-2 border-brand-300 bg-brand-50 p-3 shadow-sm">
       {/* Imagen */}
@@ -38,13 +37,6 @@ export function PendingProductCard({ product, onAdd, onDiscard }: Props) {
             <Barcode size={13} /> {product.barcode || product.sku || '—'}
           </span>
           <span>IVA {product.ivaRate}%</span>
-          {product.trackStock ? (
-            <span className={out ? 'font-semibold text-rose-600' : ''}>
-              {out ? 'Sin stock' : `Stock: ${product.stock}`}
-            </span>
-          ) : (
-            <span>Servicio</span>
-          )}
         </div>
       </div>
 
@@ -56,7 +48,7 @@ export function PendingProductCard({ product, onAdd, onDiscard }: Props) {
             <X size={16} /> Descartar
           </Button>
           <Button size="md" onClick={onAdd} title="Añadir a la venta (Intro)">
-            {out ? <Plus size={18} /> : <Check size={18} />} Añadir a venta
+            <Check size={18} /> Añadir a venta
           </Button>
         </div>
       </div>

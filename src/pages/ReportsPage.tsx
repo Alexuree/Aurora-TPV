@@ -72,7 +72,10 @@ export function ReportsPage() {
 
   const byPayment = useMemo(() => {
     const acc: Record<string, number> = {};
-    for (const s of valid) for (const p of s.payments) acc[p.method] = round2((acc[p.method] ?? 0) + p.amount);
+    for (const s of valid) for (const p of s.payments) {
+      const method = p.method === 'cash' ? 'cash' : 'card';
+      acc[method] = round2((acc[method] ?? 0) + p.amount);
+    }
     return acc;
   }, [valid]);
 
@@ -110,13 +113,12 @@ export function ReportsPage() {
         {/* Facturación del periodo (bruto / anulado / neto + métodos) */}
         <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5">
           <h3 className="mb-3 font-bold text-slate-800">Facturación del periodo</h3>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Mini label="Bruto" value={formatMoney(summary.gross)} />
             <Mini label="Anulado" value={`−${formatMoney(summary.cancelled)}`} tone="rose" />
             <Mini label="Neto" value={formatMoney(summary.net)} tone="brand" />
             <Mini label="Efectivo" value={formatMoney(summary.byMethod.cash)} />
             <Mini label="Tarjeta" value={formatMoney(summary.byMethod.card)} />
-            <Mini label="Bizum" value={formatMoney(summary.byMethod.bizum)} />
           </div>
           <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500">
             <span>Tickets: <b className="text-slate-700">{summary.ticketCount}</b></span>

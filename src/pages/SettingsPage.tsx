@@ -114,7 +114,6 @@ export function SettingsPage() {
 
                 <div className="col-span-2"><Field label="Texto de cabecera"><input className={inputClass} value={form.headerText} onChange={(e) => set('headerText', e.target.value)} /></Field></div>
                 <div className="col-span-2"><Field label="Pie del ticket"><input className={inputClass} value={form.ticketFooter} onChange={(e) => set('ticketFooter', e.target.value)} /></Field></div>
-                <div className="col-span-2"><Field label="Política de devoluciones"><textarea className={`${inputClass} h-16 py-2`} value={form.returnPolicy} onChange={(e) => set('returnPolicy', e.target.value)} /></Field></div>
                 <div className="col-span-2"><Field label="Mensaje legal"><textarea className={`${inputClass} h-16 py-2`} value={form.legalText} onChange={(e) => set('legalText', e.target.value)} /></Field></div>
               </div>
             </section>

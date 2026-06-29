@@ -6,12 +6,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { repo } from '@/data';
 import type {
-  AdjustStockInput,
   CancelSaleInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
-  ProcessReturnInput,
   ProcessSaleInput,
   SalesFilter,
 } from '@/data/repository';
@@ -24,12 +22,10 @@ export const qk = {
   settings: ['settings'] as const,
   users: ['users'] as const,
   sales: (f?: SalesFilter) => ['sales', f ?? {}] as const,
-  returns: ['returns'] as const,
   cancellations: ['cancellations'] as const,
   openCash: ['cash', 'open'] as const,
   cashSessions: ['cash', 'sessions'] as const,
   cashMovements: (id: string) => ['cash', 'movements', id] as const,
-  stockMovements: (id?: string) => ['stock', id ?? 'all'] as const,
 };
 
 /* ----------------------------- Queries -------------------------------- */
@@ -41,7 +37,6 @@ export const useSettings = () => useQuery({ queryKey: qk.settings, queryFn: () =
 export const useUsers = () => useQuery({ queryKey: qk.users, queryFn: () => repo.listUsers() });
 export const useSales = (filter?: SalesFilter) =>
   useQuery({ queryKey: qk.sales(filter), queryFn: () => repo.listSales(filter) });
-export const useReturns = () => useQuery({ queryKey: qk.returns, queryFn: () => repo.listReturns() });
 export const useCancellations = () => useQuery({ queryKey: qk.cancellations, queryFn: () => repo.listCancellations() });
 export const useOpenCashSession = () => useQuery({ queryKey: qk.openCash, queryFn: () => repo.getOpenCashSession() });
 export const useCashSessions = () => useQuery({ queryKey: qk.cashSessions, queryFn: () => repo.listCashSessions() });
@@ -51,8 +46,6 @@ export const useCashMovements = (sessionId?: string) =>
     queryFn: () => repo.listCashMovements(sessionId!),
     enabled: !!sessionId,
   });
-export const useStockMovements = (productId?: string) =>
-  useQuery({ queryKey: qk.stockMovements(productId), queryFn: () => repo.listStockMovements(productId) });
 export const useProductPriceHistory = (productId?: string) =>
   useQuery({
     queryKey: ['priceHistory', productId ?? ''],
@@ -72,7 +65,7 @@ export function useProcessSale() {
   const invalidate = useInvalidate();
   return useMutation({
     mutationFn: (input: ProcessSaleInput) => repo.processSale(input),
-    onSuccess: () => invalidate([qk.products, ['sales'], qk.openCash, ['stock']]),
+    onSuccess: () => invalidate([qk.products, ['sales'], qk.openCash]),
   });
 }
 
@@ -85,19 +78,11 @@ export function useSetSalePrintStatus() {
   });
 }
 
-export function useProcessReturn() {
-  const invalidate = useInvalidate();
-  return useMutation({
-    mutationFn: (input: ProcessReturnInput) => repo.processReturn(input),
-    onSuccess: () => invalidate([qk.products, ['sales'], qk.returns, ['stock']]),
-  });
-}
-
 export function useCancelSale() {
   const invalidate = useInvalidate();
   return useMutation({
     mutationFn: (input: CancelSaleInput) => repo.cancelSale(input),
-    onSuccess: () => invalidate([qk.products, ['sales'], qk.cancellations, ['cash'], ['stock']]),
+    onSuccess: () => invalidate([qk.products, ['sales'], qk.cancellations, ['cash']]),
   });
 }
 
@@ -112,14 +97,6 @@ export function useDeleteProduct() {
   const invalidate = useInvalidate();
   return useMutation({ mutationFn: (id: string) => repo.deleteProduct(id), onSuccess: () => invalidate([qk.products]) });
 }
-export function useAdjustStock() {
-  const invalidate = useInvalidate();
-  return useMutation({
-    mutationFn: (input: AdjustStockInput) => repo.adjustStock(input),
-    onSuccess: () => invalidate([qk.products, ['stock']]),
-  });
-}
-
 export function useSaveCategory() {
   const invalidate = useInvalidate();
   return useMutation({ mutationFn: (c: Category) => repo.saveCategory(c), onSuccess: () => invalidate([qk.categories]) });

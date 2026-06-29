@@ -10,15 +10,12 @@ import type {
   Category,
   Customer,
   CustomerSnapshot,
-  PaymentMethod,
   PaymentPart,
   Product,
   ProductPriceChange,
   Sale,
   SaleCancellation,
-  SaleReturn,
   Settings,
-  StockMovement,
   User,
   UUID,
 } from '@/domain/types';
@@ -55,23 +52,10 @@ export interface ProcessSaleInput {
   note?: string;
 }
 
-export interface ProcessReturnInput {
-  saleId: UUID;
-  cashierId: UUID;
-  cashierName: string;
-  reason: string;
-  refundMethod: PaymentMethod;
-  restock: boolean;
-  items: { saleItemId: UUID; productId: UUID; name: string; quantity: number; refundAmount: number }[];
-  total: number;
-}
-
 export interface CancelSaleInput {
   saleId: UUID;
   userId: UUID;
   userName: string;
-  reason: string;
-  restock: boolean;
 }
 
 export interface OpenCashInput {
@@ -84,7 +68,7 @@ export interface OpenCashInput {
 export interface CloseCashInput {
   sessionId: UUID;
   userId: UUID;
-  countedCash: number;
+  countedCash: number | null;
   note?: string;
 }
 
@@ -92,13 +76,6 @@ export interface CashMovementInput {
   cashSessionId: UUID;
   type: 'in' | 'out';
   amount: number;
-  reason: string;
-  userId: UUID;
-}
-
-export interface AdjustStockInput {
-  productId: UUID;
-  newStock: number;
   reason: string;
   userId: UUID;
 }
@@ -151,10 +128,6 @@ export interface Repository {
   cancelSale(input: CancelSaleInput): Promise<SaleCancellation>;
   listCancellations(): Promise<SaleCancellation[]>;
 
-  // Devoluciones
-  processReturn(input: ProcessReturnInput): Promise<SaleReturn>;
-  listReturns(): Promise<SaleReturn[]>;
-
   // Caja
   getOpenCashSession(): Promise<CashSession | null>;
   openCashSession(input: OpenCashInput): Promise<CashSession>;
@@ -162,10 +135,6 @@ export interface Repository {
   listCashSessions(): Promise<CashSession[]>;
   addCashMovement(input: CashMovementInput): Promise<CashMovement>;
   listCashMovements(sessionId: UUID): Promise<CashMovement[]>;
-
-  // Inventario
-  listStockMovements(productId?: UUID): Promise<StockMovement[]>;
-  adjustStock(input: AdjustStockInput): Promise<void>;
 
   // Ajustes
   getSettings(): Promise<Settings>;

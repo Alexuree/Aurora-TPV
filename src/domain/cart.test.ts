@@ -14,8 +14,6 @@ function line(partial: Partial<CartLine>): CartLine {
     basePrice: 0,
     discountPct: 0,
     priceOverridden: false,
-    trackStock: true,
-    stockAvailable: 99,
     ...partial,
   };
 }

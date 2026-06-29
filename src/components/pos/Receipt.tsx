@@ -108,7 +108,7 @@ export function Receipt({ sale, settings }: { sale: Sale; settings: Settings }) 
 
       <Divider />
       {sale.payments.map((p, i) => (
-        <Line key={i} label={PAYMENT_LABELS[p.method]} value={formatMoney(p.amount)} />
+        <Line key={i} label={PAYMENT_LABELS[p.method] ?? 'Tarjeta'} value={formatMoney(p.amount)} />
       ))}
       {sale.cashGiven != null && sale.cashGiven > 0 && (
         <>
@@ -119,7 +119,6 @@ export function Receipt({ sale, settings }: { sale: Sale; settings: Settings }) 
 
       <Divider />
       {settings.ticketFooter && <p className="text-center">{settings.ticketFooter}</p>}
-      {settings.returnPolicy && <p className="mt-1 text-center text-[9px]">{settings.returnPolicy}</p>}
       {settings.legalText && <p className="mt-1 text-center text-[9px] text-gray-600">{settings.legalText}</p>}
     </div>
   );

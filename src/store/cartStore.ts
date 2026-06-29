@@ -37,8 +37,6 @@ function lineFromProduct(product: Product, qty: number): CartLine {
     basePrice: product.price,
     discountPct: 0,
     priceOverridden: false,
-    trackStock: product.trackStock,
-    stockAvailable: product.stock,
   };
 }
 

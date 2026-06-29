@@ -18,19 +18,15 @@ import type {
   ProductPriceChange,
   Sale,
   SaleCancellation,
-  SaleReturn,
   Settings,
-  StockMovement,
   User,
   UUID,
 } from '@/domain/types';
 import type {
-  AdjustStockInput,
   CancelSaleInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
-  ProcessReturnInput,
   ProcessSaleInput,
   Repository,
   SalesFilter,
@@ -51,9 +47,6 @@ const toProduct = (r: any): Product => ({
   cost: r.cost != null ? Number(r.cost) : undefined,
   ivaRate: Number(r.iva_rate) as Product['ivaRate'],
   taxIncluded: r.tax_included,
-  stock: Number(r.stock),
-  trackStock: r.track_stock,
-  lowStockThreshold: Number(r.low_stock_threshold ?? 0),
   imageUrl: r.image_url ?? undefined,
   active: r.active,
   createdAt: r.created_at ?? undefined,
@@ -71,9 +64,6 @@ const fromProduct = (p: Product) => ({
   cost: p.cost ?? null,
   iva_rate: p.ivaRate,
   tax_included: p.taxIncluded,
-  stock: p.stock,
-  track_stock: p.trackStock,
-  low_stock_threshold: p.lowStockThreshold,
   image_url: p.imageUrl ?? null,
   active: p.active,
 });
@@ -184,38 +174,6 @@ const toCashMovement = (r: any): CashMovement => ({
   userId: r.user_id,
 });
 
-const toStockMovement = (r: any): StockMovement => ({
-  id: r.id,
-  createdAt: r.created_at,
-  productId: r.product_id,
-  productName: r.product_name,
-  type: r.type,
-  quantity: Number(r.quantity),
-  resultingStock: Number(r.resulting_stock),
-  reference: r.reference ?? undefined,
-  userId: r.user_id,
-});
-
-const toReturn = (r: any): SaleReturn => ({
-  id: r.id,
-  number: Number(r.number),
-  saleId: r.sale_id,
-  saleNumber: Number(r.sale_number),
-  createdAt: r.created_at,
-  cashierId: r.cashier_id,
-  cashierName: r.cashier_name,
-  reason: r.reason,
-  refundMethod: r.refund_method,
-  total: Number(r.total),
-  restock: r.restock,
-  items: (r.return_items ?? []).map((i: any) => ({
-    saleItemId: i.sale_item_id,
-    productId: i.product_id,
-    name: i.name,
-    quantity: Number(i.quantity),
-    refundAmount: Number(i.refund_amount),
-  })),
-});
 const toCancellation = (r: any): SaleCancellation => ({
   id: r.id,
   saleId: r.sale_id,
@@ -227,7 +185,6 @@ const toCancellation = (r: any): SaleCancellation => ({
   originalTotal: Number(r.original_total),
   paymentMethods: r.payment_methods ?? [],
   cashSessionId: r.cash_session_id ?? null,
-  restock: r.restock,
 });
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -369,8 +326,6 @@ export class SupabaseRepository implements Repository {
       p_sale_id: input.saleId,
       p_user_id: input.userId,
       p_user_name: input.userName,
-      p_reason: input.reason,
-      p_restock: input.restock,
     });
     if (error) throw new Error(error.message);
     const id = typeof data === 'string' ? data : data?.id;
@@ -387,22 +342,6 @@ export class SupabaseRepository implements Repository {
       .select('*')
       .order('created_at', { ascending: false });
     return guard(data, error).map(toCancellation);
-  }
-
-  async processReturn(input: ProcessReturnInput): Promise<SaleReturn> {
-    const { data, error } = await this.sb.rpc('process_return', { payload: input });
-    if (error) throw new Error(error.message);
-    const id = typeof data === 'string' ? data : data?.id;
-    const { data: row, error: e2 } = await this.sb
-      .from('sale_returns')
-      .select('*, return_items(*)')
-      .eq('id', id)
-      .single();
-    return toReturn(guard(row, e2));
-  }
-  async listReturns(): Promise<SaleReturn[]> {
-    const { data, error } = await this.sb.from('sale_returns').select('*, return_items(*)').order('number', { ascending: false });
-    return guard(data, error).map(toReturn);
   }
 
   async getOpenCashSession(): Promise<CashSession | null> {
@@ -437,22 +376,6 @@ export class SupabaseRepository implements Repository {
   async listCashMovements(sessionId: UUID): Promise<CashMovement[]> {
     const { data, error } = await this.sb.from('cash_movements').select('*').eq('cash_session_id', sessionId).order('created_at', { ascending: false });
     return guard(data, error).map(toCashMovement);
-  }
-
-  async listStockMovements(productId?: UUID): Promise<StockMovement[]> {
-    let q = this.sb.from('stock_movements').select('*').order('created_at', { ascending: false }).limit(500);
-    if (productId) q = q.eq('product_id', productId);
-    const { data, error } = await q;
-    return guard(data, error).map(toStockMovement);
-  }
-  async adjustStock(input: AdjustStockInput): Promise<void> {
-    const { error } = await this.sb.rpc('adjust_stock', {
-      p_product_id: input.productId,
-      p_new_stock: input.newStock,
-      p_reason: input.reason,
-      p_user_id: input.userId,
-    });
-    if (error) throw new Error(error.message);
   }
 
   async getSettings(): Promise<Settings> {

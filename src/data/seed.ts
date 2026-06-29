@@ -25,7 +25,6 @@ function p(
   barcode: string,
   price: number,
   cost: number,
-  stock: number,
   opts: Partial<Product> = {},
 ): Product {
   return {
@@ -39,9 +38,6 @@ function p(
     cost,
     ivaRate: 21,
     taxIncluded: true,
-    stock,
-    trackStock: true,
-    lowStockThreshold: 3,
     active: true,
     ...opts,
   };
@@ -49,47 +45,39 @@ function p(
 
 export const seedProducts: Product[] = [
   // Perfumes Mujer
-  p('prod-001', 'Eau de Parfum 50ml', 'Chanel Nº5', 'cat-perf-mujer', '3145891255300', 109.9, 62, 8),
-  p('prod-002', 'La Vie Est Belle 50ml', 'Lancôme', 'cat-perf-mujer', '3605532612560', 89.5, 49, 6),
-  p('prod-003', 'Good Girl 80ml', 'Carolina Herrera', 'cat-perf-mujer', '8411061993989', 119.0, 67, 5),
-  p('prod-004', 'Black Opium 50ml', 'YSL', 'cat-perf-mujer', '3614272047693', 98.0, 55, 4),
-  p('prod-005', "J'adore 50ml", 'Dior', 'cat-perf-mujer', '3348901419494', 112.5, 64, 2),
+  p('prod-001', 'Eau de Parfum 50ml', 'Chanel Nº5', 'cat-perf-mujer', '3145891255300', 109.9, 62),
+  p('prod-002', 'La Vie Est Belle 50ml', 'Lancôme', 'cat-perf-mujer', '3605532612560', 89.5, 49),
+  p('prod-003', 'Good Girl 80ml', 'Carolina Herrera', 'cat-perf-mujer', '8411061993989', 119.0, 67),
+  p('prod-004', 'Black Opium 50ml', 'YSL', 'cat-perf-mujer', '3614272047693', 98.0, 55),
+  p('prod-005', "J'adore 50ml", 'Dior', 'cat-perf-mujer', '3348901419494', 112.5, 64),
   // Perfumes Hombre
-  p('prod-010', 'Sauvage EDT 100ml', 'Dior', 'cat-perf-hombre', '3348901250177', 99.9, 56, 9),
-  p('prod-011', 'Acqua di Giò 100ml', 'Armani', 'cat-perf-hombre', '3614273255615', 92.0, 51, 7),
-  p('prod-012', 'One Million 100ml', 'Paco Rabanne', 'cat-perf-hombre', '3349668562039', 88.5, 48, 6),
-  p('prod-013', 'Boss Bottled 100ml', 'Hugo Boss', 'cat-perf-hombre', '737052352060', 79.0, 43, 3),
-  p('prod-014', 'Le Male 125ml', 'Jean Paul Gaultier', 'cat-perf-hombre', '8435415015646', 84.9, 47, 2),
+  p('prod-010', 'Sauvage EDT 100ml', 'Dior', 'cat-perf-hombre', '3348901250177', 99.9, 56),
+  p('prod-011', 'Acqua di Giò 100ml', 'Armani', 'cat-perf-hombre', '3614273255615', 92.0, 51),
+  p('prod-012', 'One Million 100ml', 'Paco Rabanne', 'cat-perf-hombre', '3349668562039', 88.5, 48),
+  p('prod-013', 'Boss Bottled 100ml', 'Hugo Boss', 'cat-perf-hombre', '737052352060', 79.0, 43),
+  p('prod-014', 'Le Male 125ml', 'Jean Paul Gaultier', 'cat-perf-hombre', '8435415015646', 84.9, 47),
   // Colonias
-  p('prod-020', 'Agua de Colonia 200ml', 'Álvarez Gómez', 'cat-colonias', '8422385000017', 12.9, 5.5, 20),
-  p('prod-021', 'Colonia Fresca 100ml', 'Heno de Pravia', 'cat-colonias', '8410225508018', 8.5, 3.2, 15),
-  p('prod-022', 'Nenuco Agua de Colonia 240ml', 'Nenuco', 'cat-colonias', '8410104870218', 6.95, 2.6, 18),
+  p('prod-020', 'Agua de Colonia 200ml', 'Álvarez Gómez', 'cat-colonias', '8422385000017', 12.9, 5.5),
+  p('prod-021', 'Colonia Fresca 100ml', 'Heno de Pravia', 'cat-colonias', '8410225508018', 8.5, 3.2),
+  p('prod-022', 'Nenuco Agua de Colonia 240ml', 'Nenuco', 'cat-colonias', '8410104870218', 6.95, 2.6),
   // Cosmética
-  p('prod-030', 'Crema Hidratante Facial 50ml', 'Nivea', 'cat-cosmetica', '4005900123459', 9.95, 4.1, 12),
-  p('prod-031', 'Barra de Labios Mate', 'Maybelline', 'cat-cosmetica', '3600531234567', 11.5, 4.8, 10),
-  p('prod-032', 'Set Brochas Maquillaje', 'Real Techniques', 'cat-cosmetica', '0791578256412', 24.9, 12, 5),
+  p('prod-030', 'Crema Hidratante Facial 50ml', 'Nivea', 'cat-cosmetica', '4005900123459', 9.95, 4.1),
+  p('prod-031', 'Barra de Labios Mate', 'Maybelline', 'cat-cosmetica', '3600531234567', 11.5, 4.8),
+  p('prod-032', 'Set Brochas Maquillaje', 'Real Techniques', 'cat-cosmetica', '0791578256412', 24.9, 12),
   // Material Foto
-  p('prod-040', 'Tarjeta SD 64GB UHS-I', 'SanDisk', 'cat-foto-material', '0619659186159', 18.9, 9.5, 14),
-  p('prod-041', 'Carrete 35mm Color 36exp', 'Kodak ColorPlus', 'cat-foto-material', '6033179000018', 11.95, 6.2, 22),
-  p('prod-042', 'Pilas AA Recargables (4u)', 'Panasonic Eneloop', 'cat-foto-material', '5410853052418', 14.5, 7.1, 16),
-  p('prod-043', 'Trípode Compacto 1.3m', 'Manfrotto', 'cat-foto-material', '8024221681543', 39.9, 21, 4),
-  // Revelado (servicios, sin control de stock)
-  p('prod-050', 'Revelado carrete 35mm', undefined, 'cat-foto-revelado', '2000000000015', 9.9, 2.5, 0, {
-    trackStock: false,
-  }),
-  p('prod-051', 'Copia foto 10x15 (unidad)', undefined, 'cat-foto-revelado', '2000000000022', 0.35, 0.08, 0, {
-    trackStock: false,
-  }),
-  p('prod-052', 'Foto carnet (8 unidades)', undefined, 'cat-foto-revelado', '2000000000039', 6.0, 1.2, 0, {
-    trackStock: false,
-  }),
-  p('prod-053', 'Impresión foto A4 sobre lienzo', undefined, 'cat-foto-revelado', '2000000000046', 24.9, 9, 0, {
-    trackStock: false,
-  }),
+  p('prod-040', 'Tarjeta SD 64GB UHS-I', 'SanDisk', 'cat-foto-material', '0619659186159', 18.9, 9.5),
+  p('prod-041', 'Carrete 35mm Color 36exp', 'Kodak ColorPlus', 'cat-foto-material', '6033179000018', 11.95, 6.2),
+  p('prod-042', 'Pilas AA Recargables (4u)', 'Panasonic Eneloop', 'cat-foto-material', '5410853052418', 14.5, 7.1),
+  p('prod-043', 'Trípode Compacto 1.3m', 'Manfrotto', 'cat-foto-material', '8024221681543', 39.9, 21),
+  // Revelado
+  p('prod-050', 'Revelado carrete 35mm', undefined, 'cat-foto-revelado', '2000000000015', 9.9, 2.5),
+  p('prod-051', 'Copia foto 10x15 (unidad)', undefined, 'cat-foto-revelado', '2000000000022', 0.35, 0.08),
+  p('prod-052', 'Foto carnet (8 unidades)', undefined, 'cat-foto-revelado', '2000000000039', 6.0, 1.2),
+  p('prod-053', 'Impresión foto A4 sobre lienzo', undefined, 'cat-foto-revelado', '2000000000046', 24.9, 9),
   // Marcos y Álbumes
-  p('prod-060', 'Marco de fotos 13x18 madera', 'Hama', 'cat-marcos', '4007249641007', 7.95, 3.4, 11),
-  p('prod-061', 'Álbum 200 fotos 10x15', 'Hofmann', 'cat-marcos', '8412345600013', 14.9, 6.8, 7),
-  p('prod-062', 'Marco múltiple 4 fotos', 'Nielsen', 'cat-marcos', '4007249641205', 19.5, 9.2, 3),
+  p('prod-060', 'Marco de fotos 13x18 madera', 'Hama', 'cat-marcos', '4007249641007', 7.95, 3.4),
+  p('prod-061', 'Álbum 200 fotos 10x15', 'Hofmann', 'cat-marcos', '8412345600013', 14.9, 6.8),
+  p('prod-062', 'Marco múltiple 4 fotos', 'Nielsen', 'cat-marcos', '4007249641205', 19.5, 9.2),
 ];
 
 /**
@@ -115,7 +103,7 @@ export const seedSettings: Settings = {
   ticketWidth: '80',
   showTaxBreakdown: true,
   headerText: 'Perfumería · Colonias · Fotografía',
-  returnPolicy: 'Cambios y devoluciones en 30 días con ticket y producto sin abrir.',
+  returnPolicy: '',
   legalText: 'IVA incluido en los precios. Conserve este ticket.',
   logoUrl: undefined,
 };

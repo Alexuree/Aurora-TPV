@@ -3,7 +3,7 @@
 // salidas), cierre diario con descuadre y resumen por método de pago.
 // =====================================================================
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowDownCircle, ArrowUpCircle, Wallet } from 'lucide-react';
 import { useAuth } from '@/store/authStore';
 import {
@@ -18,13 +18,22 @@ import {
 import type { CashSession, PaymentMethod, Sale } from '@/domain/types';
 import { formatMoney, round2 } from '@/domain/money';
 import { formatDateTime } from '@/lib/format';
+import { getPrinterService } from '@/lib/printing';
 import { PAYMENT_LABELS } from '@/domain/payments';
 import { Button, Field, Modal, PageHeader, inputClass } from '@/components/ui';
 
 function paymentSummary(sales: Sale[]): Record<PaymentMethod, number> {
-  const acc: Record<PaymentMethod, number> = { cash: 0, card: 0, bizum: 0 };
-  for (const s of sales) for (const p of s.payments) acc[p.method] = round2(acc[p.method] + p.amount);
+  const acc: Record<PaymentMethod, number> = { cash: 0, card: 0 };
+  for (const s of sales) for (const p of s.payments) {
+    const method = p.method === 'cash' ? 'cash' : 'card';
+    acc[method] = round2(acc[method] + p.amount);
+  }
   return acc;
+}
+
+interface ClosingPrintState {
+  session: CashSession;
+  sales: Sale[];
 }
 
 export function CashPage() {
@@ -37,15 +46,25 @@ export function CashPage() {
   const closeCash = useCloseCash();
   const addMovement = useAddCashMovement();
 
-  const [openingFloat, setOpeningFloat] = useState('100');
+  const [openingFloat, setOpeningFloat] = useState('');
   const [showClose, setShowClose] = useState(false);
+  const [closingPrint, setClosingPrint] = useState<ClosingPrintState | null>(null);
 
-  const sessionSales = useMemo(
-    () => allSales.filter((s) => openSession && s.cashSessionId === openSession.id && s.status !== 'cancelled'),
+  useEffect(() => {
+    if (!closingPrint) return;
+    const timer = window.setTimeout(() => {
+      void getPrinterService().print();
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [closingPrint]);
+
+  const sessionAllSales = useMemo(
+    () => allSales.filter((s) => openSession && s.cashSessionId === openSession.id),
     [allSales, openSession],
   );
+  const sessionSales = useMemo(() => sessionAllSales.filter((s) => s.status !== 'cancelled'), [sessionAllSales]);
   const summary = paymentSummary(sessionSales);
-  const totalSold = round2(summary.cash + summary.card + summary.bizum);
+  const totalSold = round2(summary.cash + summary.card);
 
   if (isLoading) return <div className="p-6 text-slate-400">Cargando…</div>;
 
@@ -59,7 +78,7 @@ export function CashPage() {
             <div className="mb-4 flex items-center gap-2 text-slate-700">
               <Wallet className="text-brand-600" /> <h2 className="text-lg font-bold">Abrir caja</h2>
             </div>
-            <Field label="Saldo inicial en efectivo (fondo de caja)">
+            <Field label="Saldo inicial en efectivo (opcional)">
               <input type="number" min={0} step="0.01" value={openingFloat} onChange={(e) => setOpeningFloat(e.target.value)} className={inputClass} />
             </Field>
             <Button
@@ -74,6 +93,7 @@ export function CashPage() {
           </div>
           <SessionHistory sessions={sessions} />
         </div>
+        {closingPrint && <ClosingSummaryModal session={closingPrint.session} sales={closingPrint.sales} onClose={() => setClosingPrint(null)} />}
       </div>
     );
   }
@@ -121,12 +141,18 @@ export function CashPage() {
           session={openSession}
           expectedPreview={round2(openSession.openingFloat + summary.cash + movementsNet(movements))}
           onClose={() => setShowClose(false)}
-          onConfirm={(counted, note) =>
-            closeCash.mutateAsync({ sessionId: openSession.id, userId: user.id, countedCash: counted, note }).then(() => setShowClose(false))
-          }
+          onConfirm={(counted, note) => {
+            closeCash
+              .mutateAsync({ sessionId: openSession.id, userId: user.id, countedCash: counted, note })
+              .then((closed) => {
+                setShowClose(false);
+                setClosingPrint({ session: closed, sales: sessionAllSales });
+              });
+          }}
           pending={closeCash.isPending}
         />
       )}
+      {closingPrint && <ClosingSummaryModal session={closingPrint.session} sales={closingPrint.sales} onClose={() => setClosingPrint(null)} />}
     </div>
   );
 }
@@ -196,27 +222,27 @@ function MovementsList({ movements }: { movements: { id: string; type: 'in' | 'o
   );
 }
 
-function CloseCashModal({ session, expectedPreview, onClose, onConfirm, pending }: { session: CashSession; expectedPreview: number; onClose: () => void; onConfirm: (counted: number, note?: string) => void; pending: boolean }) {
+function CloseCashModal({ session, expectedPreview, onClose, onConfirm, pending }: { session: CashSession; expectedPreview: number; onClose: () => void; onConfirm: (counted: number | null, note?: string) => void; pending: boolean }) {
   const [counted, setCounted] = useState('');
   const [note, setNote] = useState('');
-  const countedNum = parseFloat(counted) || 0;
-  const diff = round2(countedNum - expectedPreview);
+  const countedNum = counted.trim() === '' ? null : parseFloat(counted) || 0;
+  const diff = countedNum == null ? null : round2(countedNum - expectedPreview);
   return (
     <Modal open onClose={onClose} title="Cerrar caja" footer={
       <>
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
-        <Button variant="danger" disabled={pending || counted === ''} onClick={() => onConfirm(countedNum, note || undefined)}>Confirmar cierre</Button>
+        <Button variant="danger" disabled={pending} onClick={() => onConfirm(countedNum, note || undefined)}>Confirmar cierre</Button>
       </>
     }>
       <div className="space-y-4">
-        <p className="text-sm text-slate-500">Cuenta el efectivo real del cajón e introdúcelo. El sistema calculará el descuadre.</p>
-        <Field label="Efectivo contado (€)"><input autoFocus type="number" min={0} step="0.01" value={counted} onChange={(e) => setCounted(e.target.value)} className={`${inputClass} text-lg font-bold`} /></Field>
+        <p className="text-sm text-slate-500">Puedes cerrar sin introducir efectivo contado. Si lo rellenas, el sistema calculará el descuadre.</p>
+        <Field label="Efectivo contado (€) opcional"><input autoFocus type="number" min={0} step="0.01" value={counted} onChange={(e) => setCounted(e.target.value)} className={`${inputClass} text-lg font-bold`} /></Field>
         {counted !== '' && (
           <div className="grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-xl bg-slate-50 px-4 py-3"><p className="text-slate-400">Previsto</p><p className="text-lg font-bold tabular-nums text-slate-700">{formatMoney(expectedPreview)}</p></div>
             <div className={`rounded-xl px-4 py-3 ${diff === 0 ? 'bg-emerald-50' : 'bg-amber-50'}`}>
               <p className="text-slate-400">Descuadre</p>
-              <p className={`text-lg font-bold tabular-nums ${diff === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{diff > 0 ? '+' : ''}{formatMoney(diff)}</p>
+              <p className={`text-lg font-bold tabular-nums ${diff === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>{diff != null && diff > 0 ? '+' : ''}{formatMoney(diff ?? 0)}</p>
             </div>
           </div>
         )}
@@ -258,12 +284,17 @@ function SessionHistory({ sessions }: { sessions: CashSession[] }) {
           </button>
         ))}
       </div>
-      {summary && <ClosingSummaryModal session={summary} onClose={() => setSummary(null)} />}
+      {summary && <ClosingSummaryModal session={summary} sales={[]} onClose={() => setSummary(null)} />}
     </div>
   );
 }
 
-function ClosingSummaryModal({ session, onClose }: { session: CashSession; onClose: () => void }) {
+function ClosingSummaryModal({ session, sales, onClose }: { session: CashSession; sales: Sale[]; onClose: () => void }) {
+  const validSales = sales.filter((s) => s.status !== 'cancelled');
+  const payments = paymentSummary(validSales);
+  const cashCollected = sales.length > 0 ? payments.cash : Math.max(0, (session.expectedCash ?? 0) - session.openingFloat);
+  const cardCollected = sales.length > 0 ? payments.card : (session.cardTotal ?? 0);
+  const salesTotal = session.salesTotal ?? round2(payments.cash + payments.card);
   return (
     <Modal open onClose={onClose} size="sm" title={`Cierre de caja · ${formatDateTime(session.closedAt)}`} footer={
       <Button variant="outline" className="no-print w-full" onClick={() => window.print()}>Imprimir resumen</Button>
@@ -274,20 +305,40 @@ function ClosingSummaryModal({ session, onClose }: { session: CashSession; onClo
         <div className="my-2 border-t border-dashed border-black" />
         <Row k="Abierta por" v={session.openedByName} />
         <Row k="Fondo inicial" v={formatMoney(session.openingFloat)} />
-        <Row k="Ventas netas" v={formatMoney(session.salesTotal ?? 0)} />
-        <Row k="Total tarjeta" v={formatMoney(session.cardTotal ?? 0)} />
+        <Row k="Tickets válidos" v={sales.length > 0 ? String(validSales.length) : '—'} />
+        <Row k="Ventas netas" v={formatMoney(salesTotal)} />
+        <Row k="Efectivo cobrado" v={formatMoney(cashCollected)} />
+        <Row k="Tarjeta cobrada" v={formatMoney(cardCollected)} />
         <Row k="Anulado" v={formatMoney(session.cancellationsTotal ?? 0)} />
         <div className="my-2 border-t border-dashed border-black" />
         <Row k="Efectivo previsto" v={formatMoney(session.expectedCash ?? 0)} />
-        <Row k="Efectivo contado" v={formatMoney(session.countedCash ?? 0)} />
-        <div className="mt-1 flex justify-between font-bold">
-          <span>Descuadre</span>
-          <span>{(session.difference ?? 0) > 0 ? '+' : ''}{formatMoney(session.difference ?? 0)}</span>
-        </div>
+        <Row k="Efectivo contado" v={session.countedCash == null ? 'No contado' : formatMoney(session.countedCash)} />
+        <Row k="Descuadre" v={session.difference == null ? 'No calculado' : `${session.difference > 0 ? '+' : ''}${formatMoney(session.difference)}`} />
+        {sales.length > 0 && (
+          <>
+            <div className="my-2 border-t border-dashed border-black" />
+            <p className="mb-1 font-bold">VENTAS</p>
+            {[...sales].sort((a, b) => a.number - b.number).map((sale) => (
+              <div key={sale.id} className="mb-1">
+                <div className="flex justify-between gap-2">
+                  <span>#{sale.number} {sale.status === 'cancelled' ? 'ANULADO' : ''}</span>
+                  <span>{formatMoney(sale.total)}</span>
+                </div>
+                <p className="text-[10px]">
+                  {formatDateTime(sale.createdAt)} · {sale.cashierName} · {salePaymentText(sale)}
+                </p>
+              </div>
+            ))}
+          </>
+        )}
         {session.note && <p className="mt-2 text-[11px]">Obs.: {session.note}</p>}
       </div>
     </Modal>
   );
+}
+
+function salePaymentText(sale: Sale): string {
+  return sale.payments.map((p) => `${PAYMENT_LABELS[p.method] ?? 'Tarjeta'} ${formatMoney(p.amount)}`).join(' + ');
 }
 
 function Row({ k, v }: { k: string; v: string }) {

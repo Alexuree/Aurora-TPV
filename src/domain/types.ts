@@ -14,7 +14,6 @@ export type Permission =
   | 'sell'
   | 'apply_discount'
   | 'modify_price'
-  | 'process_return'
   | 'view_reports'
   | 'manage_products'
   | 'manage_users'
@@ -58,9 +57,6 @@ export interface Product {
   cost?: number;
   ivaRate: IvaRate;
   taxIncluded: boolean;
-  stock: number;
-  trackStock: boolean;
-  lowStockThreshold: number;
   imageUrl?: string;
   active: boolean;
   createdAt?: ISODate;
@@ -130,8 +126,6 @@ export interface CartLine {
   /** Descuento de línea en %, 0..100. */
   discountPct: number;
   priceOverridden: boolean;
-  trackStock: boolean;
-  stockAvailable: number;
 }
 
 /** Resultado del cálculo de una línea (importes en euros, redondeados a 2). */
@@ -162,7 +156,7 @@ export interface CartTotals {
 
 /* ------------------------------ Pagos ------------------------------ */
 
-export type PaymentMethod = 'cash' | 'card' | 'bizum';
+export type PaymentMethod = 'cash' | 'card';
 
 export interface PaymentPart {
   method: PaymentMethod;
@@ -215,31 +209,6 @@ export interface Sale {
   ticketTemplateVersion?: number;
 }
 
-/* --------------------------- Devoluciones -------------------------- */
-
-export interface ReturnItem {
-  saleItemId: UUID;
-  productId: UUID;
-  name: string;
-  quantity: number;
-  refundAmount: number;
-}
-
-export interface SaleReturn {
-  id: UUID;
-  number: number;
-  saleId: UUID;
-  saleNumber: number;
-  createdAt: ISODate;
-  cashierId: UUID;
-  cashierName: string;
-  reason: string;
-  refundMethod: PaymentMethod;
-  items: ReturnItem[];
-  total: number;
-  restock: boolean;
-}
-
 /* --------------------------- Anulaciones --------------------------- */
 
 /** Registro de anulación de un ticket (no se borra el ticket original). */
@@ -250,11 +219,10 @@ export interface SaleCancellation {
   createdAt: ISODate;
   cancelledById: UUID;
   cancelledByName: string;
-  reason: string;
+  reason?: string;
   originalTotal: number;
   paymentMethods: PaymentMethod[];
   cashSessionId: UUID | null;
-  restock: boolean;
 }
 
 /* ------------------------------ Caja ------------------------------- */
@@ -276,7 +244,7 @@ export interface CashSession {
   difference?: number;
   /** Totales de la sesión (calculados al cerrar). */
   salesTotal?: number; // ventas netas (sin anuladas)
-  cardTotal?: number; // tarjeta + bizum
+  cardTotal?: number;
   cancellationsTotal?: number; // total anulado
   note?: string;
 }
@@ -290,20 +258,6 @@ export interface CashMovement {
   type: CashMovementType;
   amount: number;
   reason: string;
-  userId: UUID;
-}
-
-export type StockMovementType = 'sale' | 'return' | 'adjustment' | 'purchase';
-
-export interface StockMovement {
-  id: UUID;
-  createdAt: ISODate;
-  productId: UUID;
-  productName: string;
-  type: StockMovementType;
-  quantity: number; // positivo entra, negativo sale
-  resultingStock: number;
-  reference?: string; // ej: nº de venta
   userId: UUID;
 }
 
@@ -325,7 +279,7 @@ export interface Settings {
   ticketWidth: TicketWidth; // 58mm o 80mm
   showTaxBreakdown: boolean; // mostrar desglose de IVA
   headerText: string; // texto bajo los datos de tienda
-  returnPolicy: string; // política de devoluciones
+  returnPolicy: string;
   legalText: string; // mensaje legal (RGPD, etc.)
   logoUrl?: string; // data URL o ruta del logo
 }

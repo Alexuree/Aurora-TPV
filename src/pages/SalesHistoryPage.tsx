@@ -41,8 +41,8 @@ export function SalesHistoryPage() {
     setPrintStatus.mutate({ id: s.id, status: res.ok ? 'printed' : 'failed' });
   };
 
-  // Solo se puede anular: con permiso, no anulada y del día actual.
-  const canCancel = (s: Sale) => can('process_return') && s.status !== 'cancelled' && s.createdAt >= startOfToday();
+  // Solo se puede anular: con permiso de venta, no anulada y del día actual.
+  const canCancel = (s: Sale) => can('sell') && s.status !== 'cancelled' && s.createdAt >= startOfToday();
   const lastCancellable = sales.find(canCancel) ?? null;
 
   return (

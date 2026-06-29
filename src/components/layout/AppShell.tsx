@@ -6,12 +6,10 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
-  Boxes,
   Contact,
   LogOut,
   Package,
   ReceiptText,
-  RotateCcw,
   Settings as SettingsIcon,
   ShoppingCart,
   Users,
@@ -35,10 +33,8 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: '/', label: 'Venta', icon: <ShoppingCart size={22} />, permission: 'sell', end: true },
   { to: '/ventas', label: 'Ventas', icon: <ReceiptText size={22} /> },
-  { to: '/devoluciones', label: 'Devoluciones', icon: <RotateCcw size={22} />, permission: 'process_return' },
   { to: '/clientes', label: 'Clientes', icon: <Contact size={22} />, permission: 'sell' },
   { to: '/productos', label: 'Productos', icon: <Package size={22} />, permission: 'manage_products' },
-  { to: '/inventario', label: 'Inventario', icon: <Boxes size={22} />, permission: 'manage_products' },
   { to: '/caja', label: 'Caja', icon: <Wallet size={22} />, permission: 'open_close_cash' },
   { to: '/informes', label: 'Informes', icon: <BarChart3 size={22} />, permission: 'view_reports' },
   { to: '/usuarios', label: 'Usuarios', icon: <Users size={22} />, permission: 'manage_users' },

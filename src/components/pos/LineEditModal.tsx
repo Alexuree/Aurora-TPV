@@ -57,9 +57,6 @@ export function LineEditModal({ line, onClose }: { line: CartLine; onClose: () =
             />
             <Button variant="outline" size="lg" onClick={() => setQty((q) => q + 1)}>+</Button>
           </div>
-          {line.trackStock && qty > line.stockAvailable && (
-            <p className="mt-1 text-xs font-medium text-amber-600">Aviso: stock disponible {line.stockAvailable} ud.</p>
-          )}
         </Field>
 
         <Field label="Descuento (%)" hint={!canDiscount ? 'No tienes permiso para aplicar descuentos' : undefined}>

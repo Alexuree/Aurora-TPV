@@ -78,10 +78,7 @@ export function TicketPanel({ onCharge, onEditLine, onSelectCustomer }: Props) {
                       <span className="w-9 text-center text-sm font-semibold tabular-nums">{line.quantity}</span>
                       <button
                         onClick={() => incQuantity(line.lineId, 1)}
-                        className={cn(
-                          'flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200',
-                          line.trackStock && line.quantity >= line.stockAvailable && 'opacity-50',
-                        )}
+                        className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200"
                       >
                         <Plus size={14} />
                       </button>

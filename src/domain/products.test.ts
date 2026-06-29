@@ -4,7 +4,7 @@ import type { Product } from './types';
 
 const p = (over: Partial<Product>): Product => ({
   id: 'p1', name: 'X', categoryId: null, price: 10, ivaRate: 21, taxIncluded: true,
-  stock: 0, trackStock: true, lowStockThreshold: 0, active: true, ...over,
+  active: true, ...over,
 });
 
 const existing: Product[] = [p({ id: 'p1', barcode: '8410104870218' })];

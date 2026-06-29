@@ -19,7 +19,7 @@ export interface SalesSummary {
   lastSaleAt?: string;
 }
 
-const ZERO_METHODS = (): Record<PaymentMethod, number> => ({ cash: 0, card: 0, bizum: 0 });
+const ZERO_METHODS = (): Record<PaymentMethod, number> => ({ cash: 0, card: 0 });
 
 export function summarizeSales(sales: Sale[]): SalesSummary {
   const valid = sales.filter((s) => s.status !== 'cancelled');
@@ -32,7 +32,10 @@ export function summarizeSales(sales: Sale[]): SalesSummary {
 
   const byMethod = ZERO_METHODS();
   for (const s of valid) {
-    for (const p of s.payments) byMethod[p.method] = round2(byMethod[p.method] + p.amount);
+    for (const p of s.payments) {
+      const method = p.method === 'cash' ? 'cash' : 'card';
+      byMethod[method] = round2(byMethod[method] + p.amount);
+    }
   }
 
   const times = valid.map((s) => s.createdAt).sort();

@@ -12,9 +12,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { SalePage } from '@/pages/SalePage';
 import { CustomersPage } from '@/pages/CustomersPage';
 import { ProductsPage } from '@/pages/ProductsPage';
-import { InventoryPage } from '@/pages/InventoryPage';
 import { SalesHistoryPage } from '@/pages/SalesHistoryPage';
-import { ReturnsPage } from '@/pages/ReturnsPage';
 import { CashPage } from '@/pages/CashPage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { UsersPage } from '@/pages/UsersPage';
@@ -53,10 +51,8 @@ export function App() {
           >
             <Route index element={<SalePage />} />
             <Route path="ventas" element={<SalesHistoryPage />} />
-            <Route path="devoluciones" element={<RequirePermission permission="process_return"><ReturnsPage /></RequirePermission>} />
             <Route path="clientes" element={<RequirePermission permission="sell"><CustomersPage /></RequirePermission>} />
             <Route path="productos" element={<RequirePermission permission="manage_products"><ProductsPage /></RequirePermission>} />
-            <Route path="inventario" element={<RequirePermission permission="manage_products"><InventoryPage /></RequirePermission>} />
             <Route path="caja" element={<RequirePermission permission="open_close_cash"><CashPage /></RequirePermission>} />
             <Route path="informes" element={<RequirePermission permission="view_reports"><ReportsPage /></RequirePermission>} />
             <Route path="usuarios" element={<RequirePermission permission="manage_users"><UsersPage /></RequirePermission>} />

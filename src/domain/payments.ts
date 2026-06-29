@@ -18,13 +18,12 @@ export interface PaymentSummary {
 export const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   cash: 'Efectivo',
   card: 'Tarjeta',
-  bizum: 'Bizum',
 };
 
 /**
  * Resume un conjunto de pagos frente al total a cobrar.
  * - El exceso solo es válido si proviene de efectivo (se devuelve como cambio).
- * - Tarjeta y Bizum deben cobrarse por el importe exacto.
+ * - La tarjeta debe cobrarse por el importe exacto.
  */
 export function summarizePayments(total: number, parts: PaymentPart[]): PaymentSummary {
   const cleaned = parts.filter((p) => p.amount > 0);
@@ -34,7 +33,7 @@ export function summarizePayments(total: number, parts: PaymentPart[]): PaymentS
   );
   const nonCashPaid = round2(paid - cashPaid);
 
-  // Lo que el efectivo debe cubrir = total - lo cubierto por tarjeta/bizum.
+  // Lo que el efectivo debe cubrir = total - lo cubierto por tarjeta.
   const cashTarget = round2(Math.max(0, total - nonCashPaid));
   const changeDue = round2(Math.max(0, cashPaid - cashTarget));
   const remaining = round2(Math.max(0, total - paid));

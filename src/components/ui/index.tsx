@@ -88,7 +88,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md' }: M
   const widths = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
       <div className={cn('animate-pop-in relative w-full rounded-2xl bg-white shadow-2xl', widths[size])}>
         {title && (
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">

@@ -1,18 +1,18 @@
 // =====================================================================
-// Modal de cobro. Métodos: efectivo (con cambio), tarjeta, Bizum y mixto.
+// Modal de cobro. Métodos: efectivo (con cambio), tarjeta y mixto.
 // Garantiza que la suma de pagos registrados sea igual al total (el
 // exceso en efectivo se devuelve como cambio, no se almacena como pago).
 // =====================================================================
 
 import { useMemo, useState } from 'react';
-import { Banknote, CreditCard, Smartphone, Split } from 'lucide-react';
+import { Banknote, CreditCard, Split } from 'lucide-react';
 import type { PaymentMethod, PaymentPart } from '@/domain/types';
 import { formatMoney, round2 } from '@/domain/money';
 import { quickCashSuggestions } from '@/domain/payments';
 import { Button, Modal, cn, inputClass } from '@/components/ui';
 import { NumericKeypad } from './NumericKeypad';
 
-type Mode = 'cash' | 'card' | 'bizum' | 'mixed';
+type Mode = 'cash' | 'card' | 'mixed';
 
 export interface PaymentResult {
   payments: PaymentPart[];
@@ -30,14 +30,13 @@ interface Props {
 const MODES: { id: Mode; label: string; icon: typeof Banknote }[] = [
   { id: 'cash', label: 'Efectivo', icon: Banknote },
   { id: 'card', label: 'Tarjeta', icon: CreditCard },
-  { id: 'bizum', label: 'Bizum', icon: Smartphone },
   { id: 'mixed', label: 'Mixto', icon: Split },
 ];
 
 export function PaymentModal({ total, submitting, onClose, onConfirm }: Props) {
   const [mode, setMode] = useState<Mode>('cash');
   const [cashStr, setCashStr] = useState('');
-  const [mixed, setMixed] = useState<Record<PaymentMethod, string>>({ cash: '', card: '', bizum: '' });
+  const [mixed, setMixed] = useState<Record<PaymentMethod, string>>({ cash: '', card: '' });
 
   const cashEntered = parseFloat(cashStr) || 0;
   const cashChange = round2(Math.max(0, cashEntered - total));
@@ -46,8 +45,7 @@ export function PaymentModal({ total, submitting, onClose, onConfirm }: Props) {
   // ---- Mixto: cálculos
   const mixCash = parseFloat(mixed.cash) || 0;
   const mixCard = parseFloat(mixed.card) || 0;
-  const mixBizum = parseFloat(mixed.bizum) || 0;
-  const mixNonCash = round2(mixCard + mixBizum);
+  const mixNonCash = round2(mixCard);
   const mixCashNeeded = round2(Math.max(0, total - mixNonCash));
   const mixPaid = round2(mixCash + mixNonCash);
   const mixRemaining = round2(Math.max(0, total - mixPaid));
@@ -61,12 +59,11 @@ export function PaymentModal({ total, submitting, onClose, onConfirm }: Props) {
         cashGiven: cashEntered,
         changeGiven: cashChange,
       });
-    } else if (mode === 'card' || mode === 'bizum') {
+    } else if (mode === 'card') {
       onConfirm({ payments: [{ method: mode, amount: total }] });
     } else {
       const payments: PaymentPart[] = [];
       if (mixNonCash > 0 && mixCard > 0) payments.push({ method: 'card', amount: round2(mixCard) });
-      if (mixNonCash > 0 && mixBizum > 0) payments.push({ method: 'bizum', amount: round2(mixBizum) });
       if (mixCashNeeded > 0) payments.push({ method: 'cash', amount: mixCashNeeded });
       onConfirm({
         payments,
@@ -79,7 +76,7 @@ export function PaymentModal({ total, submitting, onClose, onConfirm }: Props) {
   const canConfirm =
     mode === 'cash'
       ? cashEntered + 1e-9 >= total
-      : mode === 'card' || mode === 'bizum'
+      : mode === 'card'
         ? true
         : mixNonCashValid && mixPaid + 1e-9 >= total;
 
@@ -92,7 +89,7 @@ export function PaymentModal({ total, submitting, onClose, onConfirm }: Props) {
       </div>
 
       {/* Selector de método */}
-      <div className="mb-4 grid grid-cols-4 gap-2">
+      <div className="mb-4 grid grid-cols-3 gap-2">
         {MODES.map((m) => {
           const Icon = m.icon;
           const active = mode === m.id;
@@ -142,22 +139,22 @@ export function PaymentModal({ total, submitting, onClose, onConfirm }: Props) {
         </div>
       )}
 
-      {(mode === 'card' || mode === 'bizum') && (
+      {mode === 'card' && (
         <div className="rounded-xl bg-slate-50 px-5 py-8 text-center">
           <p className="text-slate-600">
             Cobro de <span className="font-bold text-slate-900">{formatMoney(total)}</span> con{' '}
-            <span className="font-semibold">{mode === 'card' ? 'tarjeta' : 'Bizum'}</span>.
+            <span className="font-semibold">tarjeta</span>.
           </p>
-          <p className="mt-1 text-sm text-slate-400">Confirma cuando el pago se haya realizado en el datáfono/app.</p>
+          <p className="mt-1 text-sm text-slate-400">Confirma cuando el pago se haya realizado en el datáfono.</p>
         </div>
       )}
 
       {mode === 'mixed' && (
         <div className="space-y-3">
-          {(['cash', 'card', 'bizum'] as PaymentMethod[]).map((m) => (
+          {(['cash', 'card'] as PaymentMethod[]).map((m) => (
             <div key={m} className="flex items-center gap-3">
               <span className="w-24 text-sm font-medium text-slate-600">
-                {m === 'cash' ? 'Efectivo' : m === 'card' ? 'Tarjeta' : 'Bizum'}
+                {m === 'cash' ? 'Efectivo' : 'Tarjeta'}
               </span>
               <input
                 type="number"
@@ -176,7 +173,7 @@ export function PaymentModal({ total, submitting, onClose, onConfirm }: Props) {
               </button>
             </div>
           ))}
-          {!mixNonCashValid && <p className="text-sm font-medium text-rose-600">Tarjeta + Bizum no pueden superar el total.</p>}
+          {!mixNonCashValid && <p className="text-sm font-medium text-rose-600">La tarjeta no puede superar el total.</p>}
           <div className="flex justify-between rounded-xl bg-slate-50 px-4 py-2 text-sm">
             <span className="text-slate-500">Pendiente</span>
             <span className="font-bold tabular-nums text-slate-800">{formatMoney(mixRemaining)}</span>

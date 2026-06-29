@@ -1,7 +1,7 @@
 // =====================================================================
 // Implementación de Repository sobre localStorage. Es la que hace que la
 // aplicación sea usable HOY en el mostrador sin montar infraestructura.
-// Mantiene la integridad de stock, numeración de tickets y caja.
+// Mantiene la numeración de tickets y caja.
 // =====================================================================
 
 import type {
@@ -12,9 +12,7 @@ import type {
   Sale,
   SaleCancellation,
   SaleItem,
-  SaleReturn,
   Settings,
-  StockMovement,
   User,
   UUID,
 } from '@/domain/types';
@@ -23,12 +21,10 @@ import { summarizeSales } from '@/domain/sales';
 import { uid } from '@/lib/uid';
 import { seedCategories, seedProducts, seedSettings, seedUsers } from '@/data/seed';
 import type {
-  AdjustStockInput,
   CancelSaleInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
-  ProcessReturnInput,
   ProcessSaleInput,
   Repository,
   SalesFilter,
@@ -43,14 +39,11 @@ const K = {
   priceHistory: `${NS}:priceHistory`,
   customers: `${NS}:customers`,
   sales: `${NS}:sales`,
-  returns: `${NS}:returns`,
   cancellations: `${NS}:cancellations`,
   cashSessions: `${NS}:cashSessions`,
   cashMovements: `${NS}:cashMovements`,
-  stockMovements: `${NS}:stockMovements`,
   settings: `${NS}:settings`,
   saleSeq: `${NS}:saleSeq`,
-  returnSeq: `${NS}:returnSeq`,
   seeded: `${NS}:seeded`,
 };
 
@@ -93,14 +86,11 @@ export class LocalRepository implements Repository {
     write(K.priceHistory, []);
     write(K.customers, []);
     write(K.sales, []);
-    write(K.returns, []);
     write(K.cancellations, []);
     write(K.cashSessions, []);
     write(K.cashMovements, []);
-    write(K.stockMovements, []);
     write(K.settings, seedSettings);
     localStorage.setItem(K.saleSeq, '1000');
-    localStorage.setItem(K.returnSeq, '500');
     localStorage.setItem(K.seeded, '1');
   }
 
@@ -220,8 +210,6 @@ export class LocalRepository implements Repository {
 
   /* ------------------------------ Sales --------------------------- */
   async processSale(input: ProcessSaleInput): Promise<Sale> {
-    const products = read<Product[]>(K.products, []);
-    const stockMoves = read<StockMovement[]>(K.stockMovements, []);
     const now = new Date().toISOString();
     const number = nextSeq(K.saleSeq);
 
@@ -238,28 +226,6 @@ export class LocalRepository implements Repository {
       lineTotal: l.lineTotal,
       returnedQty: 0,
     }));
-
-    // Descontar stock y registrar movimientos
-    for (const line of input.lines) {
-      const prod = products.find((p) => p.id === line.productId);
-      if (prod && prod.trackStock) {
-        prod.stock = round2(prod.stock - line.quantity);
-        prod.updatedAt = now;
-        stockMoves.push({
-          id: uid(),
-          createdAt: now,
-          productId: prod.id,
-          productName: prod.name,
-          type: 'sale',
-          quantity: -line.quantity,
-          resultingStock: prod.stock,
-          reference: `Venta #${number}`,
-          userId: input.cashierId,
-        });
-      }
-    }
-    write(K.products, products);
-    write(K.stockMovements, stockMoves);
 
     const sale: Sale = {
       id: uid(),
@@ -338,35 +304,6 @@ export class LocalRepository implements Repository {
 
     const now = new Date().toISOString();
 
-    // Reintegro de stock (opcional)
-    if (input.restock) {
-      const products = read<Product[]>(K.products, []);
-      const stockMoves = read<StockMovement[]>(K.stockMovements, []);
-      for (const item of sale.items) {
-        const prod = products.find((p) => p.id === item.productId);
-        if (prod && prod.trackStock) {
-          const remaining = round2(item.quantity - item.returnedQty);
-          if (remaining > 0) {
-            prod.stock = round2(prod.stock + remaining);
-            prod.updatedAt = now;
-            stockMoves.push({
-              id: uid(),
-              createdAt: now,
-              productId: prod.id,
-              productName: prod.name,
-              type: 'return',
-              quantity: remaining,
-              resultingStock: prod.stock,
-              reference: `Anulación #${sale.number}`,
-              userId: input.userId,
-            });
-          }
-        }
-      }
-      write(K.products, products);
-      write(K.stockMovements, stockMoves);
-    }
-
     sale.status = 'cancelled';
     write(K.sales, sales);
 
@@ -377,11 +314,10 @@ export class LocalRepository implements Repository {
       createdAt: now,
       cancelledById: input.userId,
       cancelledByName: input.userName,
-      reason: input.reason,
+      reason: 'Anulación de ticket',
       originalTotal: sale.total,
       paymentMethods: [...new Set(sale.payments.map((p) => p.method))],
       cashSessionId: sale.cashSessionId,
-      restock: input.restock,
     };
     const list = read<SaleCancellation[]>(K.cancellations, []);
     list.unshift(cancellation);
@@ -391,71 +327,6 @@ export class LocalRepository implements Repository {
 
   async listCancellations(): Promise<SaleCancellation[]> {
     return ok(read<SaleCancellation[]>(K.cancellations, []));
-  }
-
-  /* --------------------------- Returns ---------------------------- */
-  async processReturn(input: ProcessReturnInput): Promise<SaleReturn> {
-    const sales = read<Sale[]>(K.sales, []);
-    const sale = sales.find((s) => s.id === input.saleId);
-    if (!sale) throw new Error('Venta no encontrada');
-
-    const products = read<Product[]>(K.products, []);
-    const stockMoves = read<StockMovement[]>(K.stockMovements, []);
-    const now = new Date().toISOString();
-    const number = nextSeq(K.returnSeq);
-
-    for (const ri of input.items) {
-      const item = sale.items.find((i) => i.id === ri.saleItemId);
-      if (item) item.returnedQty = round2(item.returnedQty + ri.quantity);
-      if (input.restock) {
-        const prod = products.find((p) => p.id === ri.productId);
-        if (prod && prod.trackStock) {
-          prod.stock = round2(prod.stock + ri.quantity);
-          prod.updatedAt = now;
-          stockMoves.push({
-            id: uid(),
-            createdAt: now,
-            productId: prod.id,
-            productName: prod.name,
-            type: 'return',
-            quantity: ri.quantity,
-            resultingStock: prod.stock,
-            reference: `Devolución #${number}`,
-            userId: input.cashierId,
-          });
-        }
-      }
-    }
-
-    const fullyReturned = sale.items.every((i) => i.returnedQty >= i.quantity);
-    sale.status = fullyReturned ? 'returned' : 'partially_returned';
-
-    write(K.sales, sales);
-    write(K.products, products);
-    write(K.stockMovements, stockMoves);
-
-    const ret: SaleReturn = {
-      id: uid(),
-      number,
-      saleId: sale.id,
-      saleNumber: sale.number,
-      createdAt: now,
-      cashierId: input.cashierId,
-      cashierName: input.cashierName,
-      reason: input.reason,
-      refundMethod: input.refundMethod,
-      items: input.items,
-      total: input.total,
-      restock: input.restock,
-    };
-    const returns = read<SaleReturn[]>(K.returns, []);
-    returns.unshift(ret);
-    write(K.returns, returns);
-    return ok(ret);
-  }
-
-  async listReturns(): Promise<SaleReturn[]> {
-    return ok(read<SaleReturn[]>(K.returns, []));
   }
 
   /* ------------------------------ Cash ---------------------------- */
@@ -494,18 +365,18 @@ export class LocalRepository implements Repository {
     session.status = 'closed';
     session.closedAt = new Date().toISOString();
     session.closedById = input.userId;
-    session.countedCash = round2(input.countedCash);
+    session.countedCash = input.countedCash == null ? undefined : round2(input.countedCash);
     session.expectedCash = expectedCash;
-    session.difference = round2(input.countedCash - expectedCash);
+    session.difference = input.countedCash == null ? undefined : round2(input.countedCash - expectedCash);
     session.salesTotal = summary.net;
-    session.cardTotal = round2(summary.byMethod.card + summary.byMethod.bizum);
+    session.cardTotal = round2(summary.byMethod.card);
     session.cancellationsTotal = summary.cancelled;
     session.note = input.note ?? session.note;
     write(K.cashSessions, sessions);
     return ok(session);
   }
 
-  /** Efectivo esperado = fondo + ventas efectivo + entradas - salidas - devoluciones efectivo. */
+  /** Efectivo esperado = fondo + ventas efectivo + entradas - salidas. */
   private computeExpectedCash(session: CashSession): number {
     // Excluye las ventas anuladas: su efectivo no está en el cajón.
     const sales = read<Sale[]>(K.sales, []).filter(
@@ -521,11 +392,7 @@ export class LocalRepository implements Repository {
     );
     const cashIn = movements.filter((m) => m.type === 'in').reduce((a, m) => a + m.amount, 0);
     const cashOut = movements.filter((m) => m.type === 'out').reduce((a, m) => a + m.amount, 0);
-    const returns = read<SaleReturn[]>(K.returns, []).filter(
-      (r) => r.refundMethod === 'cash' && sales.some((s) => s.id === r.saleId),
-    );
-    const cashRefunds = returns.reduce((a, r) => a + r.total, 0);
-    return round2(session.openingFloat + cashSales + cashIn - cashOut - cashRefunds);
+    return round2(session.openingFloat + cashSales + cashIn - cashOut);
   }
 
   async listCashSessions(): Promise<CashSession[]> {
@@ -550,38 +417,6 @@ export class LocalRepository implements Repository {
 
   async listCashMovements(sessionId: UUID): Promise<CashMovement[]> {
     return ok(read<CashMovement[]>(K.cashMovements, []).filter((m) => m.cashSessionId === sessionId));
-  }
-
-  /* ---------------------------- Stock ----------------------------- */
-  async listStockMovements(productId?: UUID): Promise<StockMovement[]> {
-    let moves = read<StockMovement[]>(K.stockMovements, []);
-    if (productId) moves = moves.filter((m) => m.productId === productId);
-    return ok(moves);
-  }
-
-  async adjustStock(input: AdjustStockInput): Promise<void> {
-    const products = read<Product[]>(K.products, []);
-    const prod = products.find((p) => p.id === input.productId);
-    if (!prod) throw new Error('Producto no encontrado');
-    const delta = round2(input.newStock - prod.stock);
-    prod.stock = round2(input.newStock);
-    prod.updatedAt = new Date().toISOString();
-    write(K.products, products);
-
-    const moves = read<StockMovement[]>(K.stockMovements, []);
-    moves.unshift({
-      id: uid(),
-      createdAt: new Date().toISOString(),
-      productId: prod.id,
-      productName: prod.name,
-      type: 'adjustment',
-      quantity: delta,
-      resultingStock: prod.stock,
-      reference: input.reason,
-      userId: input.userId,
-    });
-    write(K.stockMovements, moves);
-    return ok(undefined);
   }
 
   /* --------------------------- Settings --------------------------- */

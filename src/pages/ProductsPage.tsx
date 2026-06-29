@@ -10,12 +10,11 @@ import { useCategories, useDeleteProduct, useProductPriceHistory, useProducts, u
 import { formatMoney } from '@/domain/money';
 import { formatDateTime } from '@/lib/format';
 import { validateProduct } from '@/domain/products';
-import { Badge, Button, Field, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
+import { Button, Field, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
 
 const empty: Product = {
   id: '', name: '', brand: '', sku: '', barcode: '', categoryId: null,
-  price: 0, cost: 0, ivaRate: 21, taxIncluded: true, stock: 0, trackStock: true,
-  lowStockThreshold: 3, active: true,
+  price: 0, cost: 0, ivaRate: 21, taxIncluded: true, active: true,
 };
 
 export function ProductsPage() {
@@ -62,13 +61,11 @@ export function ProductsPage() {
                   <th className="px-4 py-3">Categoría</th>
                   <th className="px-4 py-3">Código</th>
                   <th className="px-4 py-3 text-right">PVP</th>
-                  <th className="px-4 py-3 text-center">Stock</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((p) => {
-                  const low = p.trackStock && p.stock <= p.lowStockThreshold;
                   return (
                     <tr key={p.id} className={cn('hover:bg-slate-50', !p.active && 'opacity-50')}>
                       <td className="px-4 py-3">
@@ -78,13 +75,6 @@ export function ProductsPage() {
                       <td className="px-4 py-3 text-slate-500">{catName(p.categoryId)}</td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-400">{p.barcode || p.sku || '—'}</td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800">{formatMoney(p.price)}</td>
-                      <td className="px-4 py-3 text-center">
-                        {p.trackStock ? (
-                          <Badge color={p.stock <= 0 ? 'red' : low ? 'amber' : 'slate'}>{p.stock} ud</Badge>
-                        ) : (
-                          <Badge color="blue">Servicio</Badge>
-                        )}
-                      </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1">
                           <button onClick={() => setEditing(p)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Pencil size={16} /></button>
@@ -124,16 +114,23 @@ function ProductFormModal({ product, all, categories, onClose, onSave, saving }:
   saving: boolean;
 }) {
   const [form, setForm] = useState<Product>(product);
+  const [price, setPrice] = useState(String(product.price || ''));
+  const [cost, setCost] = useState(product.cost != null ? String(product.cost) : '');
   const set = <K extends keyof Product>(k: K, v: Product[K]) => setForm((f) => ({ ...f, [k]: v }));
   const isNew = !product.id;
-  const validation = validateProduct(form, all, product.id || undefined);
+  const productToSave: Product = {
+    ...form,
+    price: price.trim() === '' ? 0 : Number(price),
+    cost: cost.trim() === '' ? undefined : Number(cost),
+  };
+  const validation = validateProduct(productToSave, all, product.id || undefined);
   const { data: priceHistory = [] } = useProductPriceHistory(product.id || undefined);
 
   return (
     <Modal open onClose={onClose} size="lg" title={isNew ? 'Nuevo producto' : 'Editar producto'} footer={
       <>
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
-        <Button disabled={!validation.ok || saving} onClick={() => onSave(form)}>{saving ? 'Guardando…' : 'Guardar'}</Button>
+        <Button disabled={!validation.ok || saving} onClick={() => onSave(productToSave)}>{saving ? 'Guardando…' : 'Guardar'}</Button>
       </>
     }>
       <div className="grid grid-cols-2 gap-4">
@@ -154,21 +151,16 @@ function ProductFormModal({ product, all, categories, onClose, onSave, saving }:
         </div>
         <Field label="SKU / Referencia"><input className={inputClass} value={form.sku ?? ''} onChange={(e) => set('sku', e.target.value)} /></Field>
         <div>
-          <Field label="PVP (€, IVA incl.)"><input type="number" min={0} step="0.01" className={inputClass} value={form.price} onChange={(e) => set('price', parseFloat(e.target.value) || 0)} /></Field>
+          <Field label="PVP (€, IVA incl.)"><input type="number" min={0} step="0.01" className={inputClass} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
           {validation.errors.price && <p className="mt-1 text-xs text-rose-600">{validation.errors.price}</p>}
         </div>
-        <Field label="Coste (€)"><input type="number" min={0} step="0.01" className={inputClass} value={form.cost ?? 0} onChange={(e) => set('cost', parseFloat(e.target.value) || 0)} /></Field>
+        <Field label="Coste (€)"><input type="number" min={0} step="0.01" className={inputClass} value={cost} onChange={(e) => setCost(e.target.value)} /></Field>
         <Field label="IVA">
           <select className={inputClass} value={form.ivaRate} onChange={(e) => set('ivaRate', Number(e.target.value) as IvaRate)}>
             {[21, 10, 4, 0].map((r) => <option key={r} value={r}>{r}%</option>)}
           </select>
         </Field>
-        <Field label="Stock actual"><input type="number" step="1" className={inputClass} value={form.stock} disabled={!form.trackStock} onChange={(e) => set('stock', parseFloat(e.target.value) || 0)} /></Field>
-        <Field label="Aviso stock bajo"><input type="number" step="1" className={inputClass} value={form.lowStockThreshold} disabled={!form.trackStock} onChange={(e) => set('lowStockThreshold', parseFloat(e.target.value) || 0)} /></Field>
         <div className="col-span-2 flex gap-6 pt-1">
-          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-            <input type="checkbox" checked={form.trackStock} onChange={(e) => set('trackStock', e.target.checked)} className="h-4 w-4" /> Controlar stock
-          </label>
           <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
             <input type="checkbox" checked={form.active} onChange={(e) => set('active', e.target.checked)} className="h-4 w-4" /> Activo
           </label>
