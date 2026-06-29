@@ -15,6 +15,7 @@ import type {
   Category,
   Customer,
   Product,
+  ProductPriceChange,
   Sale,
   SaleReturn,
   Settings,
@@ -73,6 +74,14 @@ const fromProduct = (p: Product) => ({
   low_stock_threshold: p.lowStockThreshold,
   image_url: p.imageUrl ?? null,
   active: p.active,
+});
+
+const toPriceChange = (r: any): ProductPriceChange => ({
+  id: r.id,
+  productId: r.product_id,
+  oldPrice: Number(r.old_price),
+  newPrice: Number(r.new_price),
+  changedAt: r.changed_at,
 });
 
 const toCategory = (r: any): Category => ({
@@ -262,6 +271,14 @@ export class SupabaseRepository implements Repository {
   async deleteProduct(id: UUID): Promise<void> {
     const { error } = await this.sb.from('products').update({ active: false }).eq('id', id);
     if (error) throw new Error(error.message);
+  }
+  async listPriceHistory(productId: UUID): Promise<ProductPriceChange[]> {
+    const { data, error } = await this.sb
+      .from('product_price_history')
+      .select('*')
+      .eq('product_id', productId)
+      .order('changed_at', { ascending: false });
+    return guard(data, error).map(toPriceChange);
   }
 
   async listCustomers(): Promise<Customer[]> {

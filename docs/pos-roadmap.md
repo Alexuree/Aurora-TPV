@@ -37,7 +37,7 @@ sin romper el flujo de venta.
 | 3 | `feature/ticket-cancellation` | ⬜ pendiente |
 | 4 | `feature/payments-daily-sales-cash-closing` | ⬜ pendiente |
 | 5 | `feature/customer-registry-invoicing` | ⬜ pendiente |
-| 6 | `feature/product-admin-crud` | ⬜ pendiente |
+| 6 | `feature/product-admin-crud` | ✅ completada |
 | 7 | `integration/professional-pos-upgrade` | ⬜ pendiente |
 
 Leyenda: ⬜ pendiente · 🟦 en curso · ✅ completada
