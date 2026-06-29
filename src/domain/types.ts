@@ -67,6 +67,15 @@ export interface Product {
   updatedAt?: ISODate;
 }
 
+/** Registro de cambio de precio de un producto (historial). */
+export interface ProductPriceChange {
+  id: UUID;
+  productId: UUID;
+  oldPrice: number;
+  newPrice: number;
+  changedAt: ISODate;
+}
+
 /* ---------------------------- Clientes ----------------------------- */
 
 export interface Customer {

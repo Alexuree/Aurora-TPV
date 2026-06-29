@@ -13,6 +13,7 @@ import type {
   PaymentMethod,
   PaymentPart,
   Product,
+  ProductPriceChange,
   Sale,
   SaleCancellation,
   SaleReturn,
@@ -133,6 +134,7 @@ export interface Repository {
   getProductByCode(code: string): Promise<Product | null>;
   saveProduct(p: Product): Promise<Product>;
   deleteProduct(id: UUID): Promise<void>;
+  listPriceHistory(productId: UUID): Promise<ProductPriceChange[]>;
 
   // Clientes
   listCustomers(): Promise<Customer[]>;

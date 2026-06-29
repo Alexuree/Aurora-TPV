@@ -33,13 +33,14 @@ import type {
   Repository,
   SalesFilter,
 } from '@/data/repository';
-import type { Product } from '@/domain/types';
+import type { Product, ProductPriceChange } from '@/domain/types';
 
 const NS = 'aurora-tpv';
 const K = {
   users: `${NS}:users`,
   categories: `${NS}:categories`,
   products: `${NS}:products`,
+  priceHistory: `${NS}:priceHistory`,
   customers: `${NS}:customers`,
   sales: `${NS}:sales`,
   returns: `${NS}:returns`,
@@ -89,6 +90,7 @@ export class LocalRepository implements Repository {
     write(K.users, seedUsers);
     write(K.categories, seedCategories);
     write(K.products, seedProducts);
+    write(K.priceHistory, []);
     write(K.customers, []);
     write(K.sales, []);
     write(K.returns, []);
@@ -168,14 +170,34 @@ export class LocalRepository implements Repository {
       updatedAt: now,
     };
     const idx = products.findIndex((x) => x.id === saved.id);
-    if (idx >= 0) products[idx] = saved;
-    else products.push(saved);
+    if (idx >= 0) {
+      // Historial de precio: registra si cambió
+      const prev = products[idx];
+      if (prev.price !== saved.price) {
+        const hist = read<ProductPriceChange[]>(K.priceHistory, []);
+        hist.unshift({ id: uid(), productId: saved.id, oldPrice: prev.price, newPrice: saved.price, changedAt: now });
+        write(K.priceHistory, hist);
+      }
+      products[idx] = saved;
+    } else {
+      products.push(saved);
+    }
     write(K.products, products);
     return ok(saved);
   }
+  /** Baja LÓGICA: no se borra (puede tener ventas asociadas), se marca inactivo. */
   async deleteProduct(id: UUID): Promise<void> {
-    write(K.products, read<Product[]>(K.products, []).filter((p) => p.id !== id));
+    const products = read<Product[]>(K.products, []);
+    const prod = products.find((p) => p.id === id);
+    if (prod) {
+      prod.active = false;
+      prod.updatedAt = new Date().toISOString();
+      write(K.products, products);
+    }
     return ok(undefined);
+  }
+  async listPriceHistory(productId: UUID): Promise<ProductPriceChange[]> {
+    return ok(read<ProductPriceChange[]>(K.priceHistory, []).filter((h) => h.productId === productId));
   }
 
   /* ---------------------------- Customers ------------------------- */

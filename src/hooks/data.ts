@@ -53,6 +53,12 @@ export const useCashMovements = (sessionId?: string) =>
   });
 export const useStockMovements = (productId?: string) =>
   useQuery({ queryKey: qk.stockMovements(productId), queryFn: () => repo.listStockMovements(productId) });
+export const useProductPriceHistory = (productId?: string) =>
+  useQuery({
+    queryKey: ['priceHistory', productId ?? ''],
+    queryFn: () => repo.listPriceHistory(productId!),
+    enabled: !!productId,
+  });
 
 /* ---------------------------- Mutations ------------------------------- */
 
