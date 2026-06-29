@@ -33,12 +33,12 @@ sin romper el flujo de venta.
 | # | Rama | Estado |
 |---|---|---|
 | 1 | `feature/barcode-scanner-flow` | ✅ completada |
-| 2 | `feature/thermal-ticket-template` | ⬜ pendiente |
-| 3 | `feature/ticket-cancellation` | ⬜ pendiente |
-| 4 | `feature/payments-daily-sales-cash-closing` | ⬜ pendiente |
-| 5 | `feature/customer-registry-invoicing` | ⬜ pendiente |
-| 6 | `feature/product-admin-crud` | ⬜ pendiente |
-| 7 | `integration/professional-pos-upgrade` | ⬜ pendiente |
+| 2 | `feature/thermal-ticket-template` | ✅ completada |
+| 3 | `feature/ticket-cancellation` | ✅ completada |
+| 4 | `feature/payments-daily-sales-cash-closing` | ✅ completada |
+| 5 | `feature/customer-registry-invoicing` | ✅ completada |
+| 6 | `feature/product-admin-crud` | ✅ completada |
+| 7 | `integration/professional-pos-upgrade` | 🟦 en curso |
 
 Leyenda: ⬜ pendiente · 🟦 en curso · ✅ completada
 

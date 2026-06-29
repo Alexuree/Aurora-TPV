@@ -175,6 +175,10 @@ export interface Sale {
   cashGiven?: number;
   changeGiven?: number;
   note?: string;
+  /** Estado de impresión del ticket. */
+  printStatus?: 'pending' | 'printed' | 'failed';
+  /** Versión de la plantilla con la que se generó el ticket. */
+  ticketTemplateVersion?: number;
 }
 
 /* --------------------------- Devoluciones -------------------------- */
@@ -250,6 +254,8 @@ export interface StockMovement {
 
 /* ---------------------------- Ajustes ------------------------------ */
 
+export type TicketWidth = '58' | '80';
+
 export interface Settings {
   storeName: string;
   legalName: string;
@@ -260,4 +266,11 @@ export interface Settings {
   ticketFooter: string;
   currency: string; // 'EUR'
   defaultIva: IvaRate;
+  // --- Plantilla de ticket ---
+  ticketWidth: TicketWidth; // 58mm o 80mm
+  showTaxBreakdown: boolean; // mostrar desglose de IVA
+  headerText: string; // texto bajo los datos de tienda
+  returnPolicy: string; // política de devoluciones
+  legalText: string; // mensaje legal (RGPD, etc.)
+  logoUrl?: string; // data URL o ruta del logo
 }

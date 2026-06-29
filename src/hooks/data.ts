@@ -67,6 +67,15 @@ export function useProcessSale() {
   });
 }
 
+export function useSetSalePrintStatus() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (p: { id: string; status: 'pending' | 'printed' | 'failed' }) =>
+      repo.setSalePrintStatus(p.id, p.status),
+    onSuccess: () => invalidate([['sales']]),
+  });
+}
+
 export function useProcessReturn() {
   const invalidate = useInvalidate();
   return useMutation({

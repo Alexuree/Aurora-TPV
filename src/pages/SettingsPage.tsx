@@ -1,51 +1,137 @@
-// Configuración de la tienda (aparece en el ticket) y datos fiscales.
+// Configuración de la tienda y de la PLANTILLA DE TICKET, con vista previa.
 
-import { useEffect, useState } from 'react';
-import { Save } from 'lucide-react';
-import type { Settings } from '@/domain/types';
+import { useEffect, useMemo, useState } from 'react';
+import { Save, Upload, X } from 'lucide-react';
+import type { Sale, Settings, TicketWidth } from '@/domain/types';
 import { useSaveSettings, useSettings } from '@/hooks/data';
 import { dataMode } from '@/config/env';
 import { Button, Field, PageHeader, inputClass } from '@/components/ui';
+import { Receipt } from '@/components/pos/Receipt';
+
+const sampleSale: Sale = {
+  id: 'preview',
+  number: 1042,
+  createdAt: new Date().toISOString(),
+  cashierId: 'u',
+  cashierName: 'María',
+  cashSessionId: null,
+  customerId: null,
+  customerName: 'Cliente mostrador',
+  status: 'completed',
+  items: [
+    { id: '1', productId: 'a', name: 'Sauvage EDT 100ml', quantity: 1, unitPrice: 99.9, discountPct: 0, ivaRate: 21, taxBase: 82.56, taxAmount: 17.34, lineTotal: 99.9, returnedQty: 0 },
+    { id: '2', productId: 'b', name: 'Carrete 35mm Color', quantity: 2, unitPrice: 11.95, discountPct: 0, ivaRate: 21, taxBase: 19.75, taxAmount: 4.15, lineTotal: 23.9, returnedQty: 0 },
+  ],
+  payments: [{ method: 'cash', amount: 123.8 }],
+  subtotal: 102.31,
+  taxTotal: 21.49,
+  discountTotal: 0,
+  total: 123.8,
+  cashGiven: 130,
+  changeGiven: 6.2,
+};
 
 export function SettingsPage() {
   const { data } = useSettings();
   const save = useSaveSettings();
   const [form, setForm] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
 
   useEffect(() => { if (data) setForm(data); }, [data]);
-  if (!form) return <div className="p-6 text-slate-400">Cargando…</div>;
+  const preview = useMemo(() => form, [form]);
+
+  if (!form || !preview) return <div className="p-6 text-slate-400">Cargando…</div>;
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setForm((f) => (f ? { ...f, [k]: v } : f));
+
+  const onLogo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoError(null);
+    if (!file.type.startsWith('image/')) { setLogoError('El logo debe ser una imagen.'); return; }
+    if (file.size > 250 * 1024) { setLogoError('El logo debe pesar menos de 250 KB.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => set('logoUrl', String(reader.result));
+    reader.readAsDataURL(file);
+  };
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="Ajustes" subtitle="Datos de la tienda que aparecen en el ticket." actions={
+      <PageHeader title="Ajustes" subtitle="Datos de la tienda y plantilla del ticket." actions={
         <Button onClick={async () => { await save.mutateAsync(form); setSaved(true); setTimeout(() => setSaved(false), 2000); }} disabled={save.isPending}>
           <Save size={18} /> {saved ? 'Guardado ✓' : 'Guardar'}
         </Button>
       } />
 
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="mx-auto max-w-2xl space-y-6">
-          <section className="rounded-2xl border border-slate-200 bg-white p-5">
-            <h3 className="mb-4 font-bold text-slate-800">Datos del negocio</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2"><Field label="Nombre comercial"><input className={inputClass} value={form.storeName} onChange={(e) => set('storeName', e.target.value)} /></Field></div>
-              <Field label="Razón social"><input className={inputClass} value={form.legalName} onChange={(e) => set('legalName', e.target.value)} /></Field>
-              <Field label="NIF/CIF"><input className={inputClass} value={form.taxId} onChange={(e) => set('taxId', e.target.value)} /></Field>
-              <div className="col-span-2"><Field label="Dirección"><input className={inputClass} value={form.address} onChange={(e) => set('address', e.target.value)} /></Field></div>
-              <Field label="Teléfono"><input className={inputClass} value={form.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
-              <Field label="Email"><input className={inputClass} value={form.email} onChange={(e) => set('email', e.target.value)} /></Field>
+        <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1fr_340px]">
+          {/* Formulario */}
+          <div className="space-y-6">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+              <h3 className="mb-4 font-bold text-slate-800">Datos del negocio</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2"><Field label="Nombre comercial"><input className={inputClass} value={form.storeName} onChange={(e) => set('storeName', e.target.value)} /></Field></div>
+                <Field label="Razón social"><input className={inputClass} value={form.legalName} onChange={(e) => set('legalName', e.target.value)} /></Field>
+                <Field label="NIF/CIF"><input className={inputClass} value={form.taxId} onChange={(e) => set('taxId', e.target.value)} /></Field>
+                <div className="col-span-2"><Field label="Dirección"><input className={inputClass} value={form.address} onChange={(e) => set('address', e.target.value)} /></Field></div>
+                <Field label="Teléfono"><input className={inputClass} value={form.phone} onChange={(e) => set('phone', e.target.value)} /></Field>
+                <Field label="Email"><input className={inputClass} value={form.email} onChange={(e) => set('email', e.target.value)} /></Field>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+              <h3 className="mb-4 font-bold text-slate-800">Plantilla de ticket</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Ancho de ticket">
+                  <select className={inputClass} value={form.ticketWidth} onChange={(e) => set('ticketWidth', e.target.value as TicketWidth)}>
+                    <option value="80">80 mm</option>
+                    <option value="58">58 mm</option>
+                  </select>
+                </Field>
+                <label className="flex items-end gap-2 pb-2 text-sm font-medium text-slate-600">
+                  <input type="checkbox" checked={form.showTaxBreakdown} onChange={(e) => set('showTaxBreakdown', e.target.checked)} className="h-4 w-4" /> Mostrar desglose de IVA
+                </label>
+
+                <div className="col-span-2">
+                  <Field label="Logo del ticket">
+                    <div className="flex items-center gap-3">
+                      {form.logoUrl ? (
+                        <div className="relative">
+                          <img src={form.logoUrl} alt="logo" className="h-12 w-12 rounded-lg border border-slate-200 object-contain" />
+                          <button onClick={() => set('logoUrl', undefined)} className="absolute -right-1.5 -top-1.5 rounded-full bg-rose-500 p-0.5 text-white"><X size={12} /></button>
+                        </div>
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-dashed border-slate-300 text-slate-300"><Upload size={18} /></div>
+                      )}
+                      <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                        Subir imagen
+                        <input type="file" accept="image/*" className="hidden" onChange={onLogo} />
+                      </label>
+                    </div>
+                  </Field>
+                  {logoError && <p className="mt-1 text-xs font-medium text-rose-600">{logoError}</p>}
+                </div>
+
+                <div className="col-span-2"><Field label="Texto de cabecera"><input className={inputClass} value={form.headerText} onChange={(e) => set('headerText', e.target.value)} /></Field></div>
+                <div className="col-span-2"><Field label="Pie del ticket"><input className={inputClass} value={form.ticketFooter} onChange={(e) => set('ticketFooter', e.target.value)} /></Field></div>
+                <div className="col-span-2"><Field label="Política de devoluciones"><textarea className={`${inputClass} h-16 py-2`} value={form.returnPolicy} onChange={(e) => set('returnPolicy', e.target.value)} /></Field></div>
+                <div className="col-span-2"><Field label="Mensaje legal"><textarea className={`${inputClass} h-16 py-2`} value={form.legalText} onChange={(e) => set('legalText', e.target.value)} /></Field></div>
+              </div>
+            </section>
+
+            <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-500">
+              Modo de datos actual: <span className="font-semibold text-slate-700">{dataMode === 'supabase' ? 'Supabase (nube)' : 'Local (este equipo)'}</span>.
             </div>
-          </section>
+          </div>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-5">
-            <h3 className="mb-4 font-bold text-slate-800">Ticket</h3>
-            <Field label="Pie del ticket"><textarea className={`${inputClass} h-24 py-2`} value={form.ticketFooter} onChange={(e) => set('ticketFooter', e.target.value)} /></Field>
-          </section>
-
-          <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-500">
-            Modo de datos actual: <span className="font-semibold text-slate-700">{dataMode === 'supabase' ? 'Supabase (nube)' : 'Local (este equipo)'}</span>.
+          {/* Vista previa */}
+          <div>
+            <div className="sticky top-0">
+              <p className="mb-2 text-sm font-semibold text-slate-500">Vista previa ({form.ticketWidth} mm)</p>
+              <div className="rounded-2xl border border-slate-200 bg-slate-100 p-3">
+                <Receipt sale={sampleSale} settings={preview} />
+              </div>
+            </div>
           </div>
         </div>
       </div>
