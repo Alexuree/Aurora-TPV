@@ -147,6 +147,9 @@ const toCashSession = (r: any): CashSession => ({
   countedCash: r.counted_cash != null ? Number(r.counted_cash) : undefined,
   expectedCash: r.expected_cash != null ? Number(r.expected_cash) : undefined,
   difference: r.difference != null ? Number(r.difference) : undefined,
+  salesTotal: r.sales_total != null ? Number(r.sales_total) : undefined,
+  cardTotal: r.card_total != null ? Number(r.card_total) : undefined,
+  cancellationsTotal: r.cancellations_total != null ? Number(r.cancellations_total) : undefined,
   note: r.note ?? undefined,
 });
 

@@ -219,6 +219,10 @@ export interface CashSession {
   countedCash?: number;
   expectedCash?: number;
   difference?: number;
+  /** Totales de la sesión (calculados al cerrar). */
+  salesTotal?: number; // ventas netas (sin anuladas)
+  cardTotal?: number; // tarjeta + bizum
+  cancellationsTotal?: number; // total anulado
   note?: string;
 }
 

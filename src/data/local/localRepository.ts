@@ -18,6 +18,7 @@ import type {
   UUID,
 } from '@/domain/types';
 import { round2 } from '@/domain/money';
+import { summarizeSales } from '@/domain/sales';
 import { uid } from '@/lib/uid';
 import { seedCategories, seedProducts, seedSettings, seedUsers } from '@/data/seed';
 import type {
@@ -376,12 +377,18 @@ export class LocalRepository implements Repository {
     if (!session) throw new Error('Sesión de caja no encontrada');
 
     const expectedCash = this.computeExpectedCash(session);
+    const sessionSales = read<Sale[]>(K.sales, []).filter((s) => s.cashSessionId === session.id);
+    const summary = summarizeSales(sessionSales);
+
     session.status = 'closed';
     session.closedAt = new Date().toISOString();
     session.closedById = input.userId;
     session.countedCash = round2(input.countedCash);
     session.expectedCash = expectedCash;
     session.difference = round2(input.countedCash - expectedCash);
+    session.salesTotal = summary.net;
+    session.cardTotal = round2(summary.byMethod.card + summary.byMethod.bizum);
+    session.cancellationsTotal = summary.cancelled;
     session.note = input.note ?? session.note;
     write(K.cashSessions, sessions);
     return ok(session);
