@@ -1,16 +1,22 @@
 // =====================================================================
 // Pantalla principal de venta (el corazón del TPV).
-// Flujo: buscar/escanear -> añadir al ticket -> cobrar -> recibo -> nueva.
+// Flujo: escanear/buscar -> producto pendiente -> añadir al ticket ->
+// cobrar -> recibo -> nueva venta.
+//
+// Escaneo: el lector USB teclea el código y pulsa Enter (o Tab). El último
+// código escaneado queda "pendiente"; si se escanea otro, el anterior se
+// añade automáticamente a la venta.
 // =====================================================================
 
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Barcode, Lock, Search, Wallet } from 'lucide-react';
+import { Barcode, Lock, PackageX, Search, Wallet } from 'lucide-react';
 import { useAuth } from '@/store/authStore';
 import { useCart } from '@/store/cartStore';
 import { useCategories, useOpenCashSession, useProcessSale, useProducts, useSettings } from '@/hooks/data';
-import type { CartLine, Sale } from '@/domain/types';
+import type { CartLine, Product, Sale } from '@/domain/types';
 import { computeLine, computeTotals, lineChargedTotal } from '@/domain/cart';
+import { createScanDeduper, looksLikeBarcode, normalizeScannedCode } from '@/lib/scanner';
 import { Button, Spinner, cn, inputClass } from '@/components/ui';
 import { ProductGrid } from '@/components/pos/ProductGrid';
 import { TicketPanel } from '@/components/pos/TicketPanel';
@@ -18,10 +24,12 @@ import { LineEditModal } from '@/components/pos/LineEditModal';
 import { PaymentModal, type PaymentResult } from '@/components/pos/PaymentModal';
 import { CustomerPickerModal } from '@/components/pos/CustomerPickerModal';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
+import { PendingProductCard } from '@/components/pos/PendingProductCard';
 
 export function SalePage() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
+  const can = useAuth((s) => s.can);
   const cart = useCart();
   const { data: products = [], isLoading } = useProducts();
   const { data: categories = [] } = useCategories();
@@ -31,11 +39,14 @@ export function SalePage() {
 
   const [term, setTerm] = useState('');
   const [categoryId, setCategoryId] = useState<string>('all');
+  const [pending, setPending] = useState<Product | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   const [editLine, setEditLine] = useState<CartLine | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [showCustomer, setShowCustomer] = useState(false);
   const [lastSale, setLastSale] = useState<Sale | null>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
+  const scanRef = useRef<HTMLInputElement>(null);
+  const deduper = useRef(createScanDeduper(80));
 
   const totals = computeTotals(cart.lines);
 
@@ -54,28 +65,76 @@ export function SalePage() {
       );
   }, [products, term, categoryId]);
 
-  const focusSearch = () => searchRef.current?.focus();
+  const focusScan = () => scanRef.current?.focus();
 
-  const addAndRefocus = (productId: string) => {
-    const p = products.find((x) => x.id === productId);
-    if (p) cart.addProduct(p);
-    setTerm('');
-    focusSearch();
-  };
-
-  // Enter en el buscador: si hay coincidencia exacta de código de barras/SKU, lo añade.
-  const onSearchEnter = () => {
-    const q = term.trim().toLowerCase();
-    if (!q) return;
-    const exact = products.find(
+  const findByCode = (code: string): Product | undefined => {
+    const q = code.toLowerCase();
+    return products.find(
       (p) => p.active && (p.barcode?.toLowerCase() === q || p.sku?.toLowerCase() === q),
     );
+  };
+
+  /** Marca un producto como pendiente; si ya había uno, lo añade primero. */
+  const registerScan = (product: Product) => {
+    if (pending) cart.addProduct(pending);
+    setPending(product);
+    setScanError(null);
+    setTerm('');
+    focusScan();
+  };
+
+  const commitPending = () => {
+    if (pending) cart.addProduct(pending);
+    setPending(null);
+    focusScan();
+  };
+
+  const discardPending = () => {
+    setPending(null);
+    focusScan();
+  };
+
+  /** Click manual en la rejilla: vuelca el pendiente (si lo hay) y añade. */
+  const addFromGrid = (p: Product) => {
+    if (pending) {
+      cart.addProduct(pending);
+      setPending(null);
+    }
+    cart.addProduct(p);
+    setTerm('');
+    focusScan();
+  };
+
+  /** Enter o Tab en el campo de escaneo/búsqueda. */
+  const onScanSubmit = () => {
+    const code = normalizeScannedCode(term);
+    if (!code) return;
+    if (!deduper.current.accept(code)) return; // ignora rebote del lector
+    const exact = findByCode(code);
     if (exact) {
-      addAndRefocus(exact.id);
+      registerScan(exact);
       return;
     }
-    // Si solo queda un resultado, añádelo (búsqueda rápida por nombre).
-    if (filtered.length === 1) addAndRefocus(filtered[0].id);
+    // Búsqueda manual rápida: si solo hay un resultado, añádelo directo.
+    if (filtered.length === 1) {
+      addFromGrid(filtered[0]);
+      return;
+    }
+    // Parece un código de barras pero no existe en el catálogo.
+    if (looksLikeBarcode(code)) {
+      setScanError(code);
+      setTerm('');
+      focusScan();
+    }
+  };
+
+  /** Antes de cobrar, vuelca el pendiente para no perderlo. */
+  const handleCharge = () => {
+    if (pending) {
+      cart.addProduct(pending);
+      setPending(null);
+    }
+    setShowPayment(true);
   };
 
   const handleConfirmPayment = async (result: PaymentResult) => {
@@ -114,6 +173,8 @@ export function SalePage() {
 
     setShowPayment(false);
     setLastSale(sale);
+    setPending(null);
+    setScanError(null);
     cart.clear();
   };
 
@@ -140,22 +201,57 @@ export function SalePage() {
   return (
     <div className="flex h-full">
       {/* Columna catálogo */}
-      <section className="flex flex-1 flex-col overflow-hidden p-4">
+      <section className="flex flex-1 flex-col overflow-hidden p-4" onMouseUp={() => focusScan()}>
         <div className="mb-3 flex gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-3.5 text-slate-400" size={20} />
             <input
-              ref={searchRef}
+              ref={scanRef}
               autoFocus
               value={term}
               onChange={(e) => setTerm(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && onSearchEnter()}
-              placeholder="Buscar producto o escanear código de barras…"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === 'Tab') {
+                  e.preventDefault();
+                  onScanSubmit();
+                }
+              }}
+              placeholder="Escanea un código de barras o busca por nombre…"
               className={`${inputClass} h-12 pl-11 text-base`}
             />
             <Barcode className="absolute right-3.5 top-3.5 text-slate-300" size={20} />
           </div>
         </div>
+
+        {/* Producto pendiente de escaneo */}
+        {pending && (
+          <div className="mb-3">
+            <PendingProductCard product={pending} onAdd={commitPending} onDiscard={discardPending} />
+          </div>
+        )}
+
+        {/* Código escaneado no encontrado */}
+        {scanError && (
+          <div className="animate-pop-in mb-3 flex items-center gap-3 rounded-2xl border-2 border-rose-200 bg-rose-50 p-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+              <PackageX size={22} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-rose-700">Producto no encontrado</p>
+              <p className="truncate text-xs text-rose-500">
+                Código <span className="font-mono">{scanError}</span> sin coincidencia. La venta sigue intacta.
+              </p>
+            </div>
+            {can('manage_products') && (
+              <Button variant="outline" size="sm" onClick={() => navigate('/productos')}>
+                Crear producto
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => { setScanError(null); focusScan(); }}>
+              Cerrar
+            </Button>
+          </div>
+        )}
 
         {/* Categorías */}
         <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
@@ -170,7 +266,7 @@ export function SalePage() {
           {isLoading ? (
             <div className="flex h-full items-center justify-center"><Spinner className="h-8 w-8" /></div>
           ) : (
-            <ProductGrid products={filtered} onSelect={(p) => addAndRefocus(p.id)} />
+            <ProductGrid products={filtered} onSelect={addFromGrid} />
           )}
         </div>
       </section>
@@ -178,7 +274,7 @@ export function SalePage() {
       {/* Columna ticket */}
       <aside className="w-[380px] shrink-0 border-l border-slate-200 shadow-[-4px_0_16px_rgba(15,23,42,0.04)]">
         <TicketPanel
-          onCharge={() => setShowPayment(true)}
+          onCharge={handleCharge}
           onEditLine={(l) => setEditLine(l)}
           onSelectCustomer={() => setShowCustomer(true)}
         />
@@ -186,12 +282,17 @@ export function SalePage() {
 
       {/* Modales */}
       {editLine && <LineEditModal line={editLine} onClose={() => setEditLine(null)} />}
-      {showCustomer && <CustomerPickerModal onClose={() => setShowCustomer(false)} onSelect={(c) => cart.setCustomer(c)} />}
+      {showCustomer && (
+        <CustomerPickerModal
+          onClose={() => { setShowCustomer(false); focusScan(); }}
+          onSelect={(c) => cart.setCustomer(c)}
+        />
+      )}
       {showPayment && (
         <PaymentModal
           total={totals.total}
           submitting={processSale.isPending}
-          onClose={() => setShowPayment(false)}
+          onClose={() => { setShowPayment(false); focusScan(); }}
           onConfirm={handleConfirmPayment}
         />
       )}
@@ -199,7 +300,7 @@ export function SalePage() {
         <ReceiptModal
           sale={lastSale}
           settings={settings}
-          onClose={() => { setLastSale(null); focusSearch(); }}
+          onClose={() => { setLastSale(null); focusScan(); }}
         />
       )}
 
