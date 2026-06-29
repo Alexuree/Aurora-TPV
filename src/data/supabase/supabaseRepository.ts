@@ -16,6 +16,7 @@ import type {
   Customer,
   Product,
   Sale,
+  SaleCancellation,
   SaleReturn,
   Settings,
   StockMovement,
@@ -24,6 +25,7 @@ import type {
 } from '@/domain/types';
 import type {
   AdjustStockInput,
+  CancelSaleInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
@@ -192,6 +194,19 @@ const toReturn = (r: any): SaleReturn => ({
     refundAmount: Number(i.refund_amount),
   })),
 });
+const toCancellation = (r: any): SaleCancellation => ({
+  id: r.id,
+  saleId: r.sale_id,
+  saleNumber: Number(r.sale_number),
+  createdAt: r.created_at,
+  cancelledById: r.cancelled_by_id,
+  cancelledByName: r.cancelled_by_name,
+  reason: r.reason,
+  originalTotal: Number(r.original_total),
+  paymentMethods: r.payment_methods ?? [],
+  cashSessionId: r.cash_session_id ?? null,
+  restock: r.restock,
+});
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 function guard<T>(data: T | null, error: { message: string } | null): T {
@@ -300,6 +315,31 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.sb.from('sales').select('*, sale_items(*), payments(*)').eq('id', id).single();
     if (error) return null;
     return data ? toSale(data) : null;
+  }
+
+  async cancelSale(input: CancelSaleInput): Promise<SaleCancellation> {
+    const { data, error } = await this.sb.rpc('cancel_sale', {
+      p_sale_id: input.saleId,
+      p_user_id: input.userId,
+      p_user_name: input.userName,
+      p_reason: input.reason,
+      p_restock: input.restock,
+    });
+    if (error) throw new Error(error.message);
+    const id = typeof data === 'string' ? data : data?.id;
+    const { data: row, error: e2 } = await this.sb
+      .from('sale_cancellations')
+      .select('*')
+      .eq('id', id)
+      .single();
+    return toCancellation(guard(row, e2));
+  }
+  async listCancellations(): Promise<SaleCancellation[]> {
+    const { data, error } = await this.sb
+      .from('sale_cancellations')
+      .select('*')
+      .order('created_at', { ascending: false });
+    return guard(data, error).map(toCancellation);
   }
 
   async processReturn(input: ProcessReturnInput): Promise<SaleReturn> {

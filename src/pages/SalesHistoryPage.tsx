@@ -1,15 +1,15 @@
 // Historial de ventas con filtros por fecha y búsqueda. Ver/imprimir recibo.
 
 import { useState } from 'react';
-import { Eye, Search } from 'lucide-react';
+import { Ban, Eye, Printer, Search } from 'lucide-react';
 import type { Sale, SaleStatus } from '@/domain/types';
 import { useSales, useSettings } from '@/hooks/data';
+import { useAuth } from '@/store/authStore';
 import { formatMoney } from '@/domain/money';
 import { formatDateTime, daysAgo, startOfToday } from '@/lib/format';
-import { Badge, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
+import { Badge, Button, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
 import { Receipt } from '@/components/pos/Receipt';
-import { Button } from '@/components/ui';
-import { Printer } from 'lucide-react';
+import { CancelTicketModal } from '@/components/pos/CancelTicketModal';
 
 const STATUS: Record<SaleStatus, { label: string; color: string }> = {
   completed: { label: 'Completada', color: 'green' },
@@ -24,16 +24,32 @@ export function SalesHistoryPage() {
   const [range, setRange] = useState<Range>('today');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Sale | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<Sale | null>(null);
   const { data: settings } = useSettings();
+  const can = useAuth((s) => s.can);
 
   const filter = range === 'today' ? { from: startOfToday() } : range === 'week' ? { from: daysAgo(7) } : {};
   const { data: sales = [], isLoading } = useSales({ ...filter, search: search || undefined });
 
   const total = sales.filter((s) => s.status !== 'cancelled').reduce((a, s) => a + s.total, 0);
 
+  // Solo se puede anular: con permiso, no anulada y del día actual.
+  const canCancel = (s: Sale) => can('process_return') && s.status !== 'cancelled' && s.createdAt >= startOfToday();
+  const lastCancellable = sales.find(canCancel) ?? null;
+
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="Ventas" subtitle={`${sales.length} tickets · ${formatMoney(total)}`} />
+      <PageHeader
+        title="Ventas"
+        subtitle={`${sales.length} tickets · ${formatMoney(total)}`}
+        actions={
+          lastCancellable ? (
+            <Button variant="danger" onClick={() => setCancelTarget(lastCancellable)}>
+              <Ban size={16} /> Anular último
+            </Button>
+          ) : undefined
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
@@ -78,10 +94,21 @@ export function SalesHistoryPage() {
 
       {selected && settings && (
         <Modal open onClose={() => setSelected(null)} size="sm" title={`Ticket #${selected.number}`} footer={
-          <Button variant="outline" className="no-print w-full" onClick={() => window.print()}><Printer size={18} /> Imprimir</Button>
+          <div className="no-print flex w-full gap-2">
+            {canCancel(selected) && (
+              <Button variant="danger" className="flex-1" onClick={() => { setCancelTarget(selected); setSelected(null); }}>
+                <Ban size={16} /> Anular
+              </Button>
+            )}
+            <Button variant="outline" className="flex-1" onClick={() => window.print()}><Printer size={18} /> Imprimir</Button>
+          </div>
         }>
           <div className="rounded-xl border border-slate-200"><Receipt sale={selected} settings={settings} /></div>
         </Modal>
+      )}
+
+      {cancelTarget && (
+        <CancelTicketModal sale={cancelTarget} onClose={() => setCancelTarget(null)} onCancelled={() => setCancelTarget(null)} />
       )}
     </div>
   );

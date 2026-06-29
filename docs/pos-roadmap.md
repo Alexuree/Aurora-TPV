@@ -34,7 +34,7 @@ sin romper el flujo de venta.
 |---|---|---|
 | 1 | `feature/barcode-scanner-flow` | ⬜ pendiente |
 | 2 | `feature/thermal-ticket-template` | ⬜ pendiente |
-| 3 | `feature/ticket-cancellation` | ⬜ pendiente |
+| 3 | `feature/ticket-cancellation` | ✅ completada |
 | 4 | `feature/payments-daily-sales-cash-closing` | ⬜ pendiente |
 | 5 | `feature/customer-registry-invoicing` | ⬜ pendiente |
 | 6 | `feature/product-admin-crud` | ⬜ pendiente |
