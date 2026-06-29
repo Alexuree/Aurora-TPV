@@ -32,15 +32,21 @@ sin romper el flujo de venta.
 
 | # | Rama | Estado |
 |---|---|---|
-| 1 | `feature/barcode-scanner-flow` | ⬜ pendiente |
-| 2 | `feature/thermal-ticket-template` | ⬜ pendiente |
-| 3 | `feature/ticket-cancellation` | ⬜ pendiente |
-| 4 | `feature/payments-daily-sales-cash-closing` | ⬜ pendiente |
-| 5 | `feature/customer-registry-invoicing` | ⬜ pendiente |
-| 6 | `feature/product-admin-crud` | ⬜ pendiente |
-| 7 | `integration/professional-pos-upgrade` | ⬜ pendiente |
+| 1 | `feature/barcode-scanner-flow` | ✅ completada |
+| 2 | `feature/thermal-ticket-template` | ✅ completada |
+| 3 | `feature/ticket-cancellation` | ✅ completada |
+| 4 | `feature/payments-daily-sales-cash-closing` | ✅ completada |
+| 5 | `feature/customer-registry-invoicing` | ✅ completada |
+| 6 | `feature/product-admin-crud` | ✅ completada |
+| 7 | `integration/professional-pos-upgrade` | ✅ completada |
 
 Leyenda: ⬜ pendiente · 🟦 en curso · ✅ completada
+
+**Integración:** las 6 ramas fusionadas en `integration/professional-pos-upgrade`.
+Conflictos resueltos combinando funcionalidades (no descartando) en
+`localRepository.ts`, `SalesHistoryPage.tsx`, `SalePage.tsx` y el roadmap.
+Verificado: `tsc -b` limpio · **32 tests** (6 archivos) · `vite build` OK ·
+6 migraciones (0001–0006). `supabase/setup.sql` regenerado con esquema + seed.
 
 ---
 

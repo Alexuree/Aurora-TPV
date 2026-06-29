@@ -10,6 +10,7 @@ import type {
   Category,
   Customer,
   Sale,
+  SaleCancellation,
   SaleItem,
   SaleReturn,
   Settings,
@@ -18,10 +19,12 @@ import type {
   UUID,
 } from '@/domain/types';
 import { round2 } from '@/domain/money';
+import { summarizeSales } from '@/domain/sales';
 import { uid } from '@/lib/uid';
 import { seedCategories, seedProducts, seedSettings, seedUsers } from '@/data/seed';
 import type {
   AdjustStockInput,
+  CancelSaleInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
@@ -30,16 +33,18 @@ import type {
   Repository,
   SalesFilter,
 } from '@/data/repository';
-import type { Product } from '@/domain/types';
+import type { Product, ProductPriceChange } from '@/domain/types';
 
 const NS = 'aurora-tpv';
 const K = {
   users: `${NS}:users`,
   categories: `${NS}:categories`,
   products: `${NS}:products`,
+  priceHistory: `${NS}:priceHistory`,
   customers: `${NS}:customers`,
   sales: `${NS}:sales`,
   returns: `${NS}:returns`,
+  cancellations: `${NS}:cancellations`,
   cashSessions: `${NS}:cashSessions`,
   cashMovements: `${NS}:cashMovements`,
   stockMovements: `${NS}:stockMovements`,
@@ -85,9 +90,11 @@ export class LocalRepository implements Repository {
     write(K.users, seedUsers);
     write(K.categories, seedCategories);
     write(K.products, seedProducts);
+    write(K.priceHistory, []);
     write(K.customers, []);
     write(K.sales, []);
     write(K.returns, []);
+    write(K.cancellations, []);
     write(K.cashSessions, []);
     write(K.cashMovements, []);
     write(K.stockMovements, []);
@@ -163,14 +170,34 @@ export class LocalRepository implements Repository {
       updatedAt: now,
     };
     const idx = products.findIndex((x) => x.id === saved.id);
-    if (idx >= 0) products[idx] = saved;
-    else products.push(saved);
+    if (idx >= 0) {
+      // Historial de precio: registra si cambió
+      const prev = products[idx];
+      if (prev.price !== saved.price) {
+        const hist = read<ProductPriceChange[]>(K.priceHistory, []);
+        hist.unshift({ id: uid(), productId: saved.id, oldPrice: prev.price, newPrice: saved.price, changedAt: now });
+        write(K.priceHistory, hist);
+      }
+      products[idx] = saved;
+    } else {
+      products.push(saved);
+    }
     write(K.products, products);
     return ok(saved);
   }
+  /** Baja LÓGICA: no se borra (puede tener ventas asociadas), se marca inactivo. */
   async deleteProduct(id: UUID): Promise<void> {
-    write(K.products, read<Product[]>(K.products, []).filter((p) => p.id !== id));
+    const products = read<Product[]>(K.products, []);
+    const prod = products.find((p) => p.id === id);
+    if (prod) {
+      prod.active = false;
+      prod.updatedAt = new Date().toISOString();
+      write(K.products, products);
+    }
     return ok(undefined);
+  }
+  async listPriceHistory(productId: UUID): Promise<ProductPriceChange[]> {
+    return ok(read<ProductPriceChange[]>(K.priceHistory, []).filter((h) => h.productId === productId));
   }
 
   /* ---------------------------- Customers ------------------------- */
@@ -252,7 +279,10 @@ export class LocalRepository implements Repository {
       total: input.total,
       cashGiven: input.cashGiven,
       changeGiven: input.changeGiven,
+      customerSnapshot: input.customerSnapshot ?? null,
       note: input.note,
+      printStatus: 'pending',
+      ticketTemplateVersion: 1,
     };
     const sales = read<Sale[]>(K.sales, []);
     sales.unshift(sale);
@@ -279,6 +309,88 @@ export class LocalRepository implements Repository {
 
   async getSale(id: UUID): Promise<Sale | null> {
     return ok(read<Sale[]>(K.sales, []).find((s) => s.id === id) ?? null);
+  }
+
+  async setSalePrintStatus(saleId: UUID, status: 'pending' | 'printed' | 'failed'): Promise<void> {
+    const sales = read<Sale[]>(K.sales, []);
+    const sale = sales.find((s) => s.id === saleId);
+    if (sale) {
+      sale.printStatus = status;
+      write(K.sales, sales);
+    }
+    return ok(undefined);
+  }
+
+  /* ------------------------- Cancellations ------------------------ */
+  async cancelSale(input: CancelSaleInput): Promise<SaleCancellation> {
+    const sales = read<Sale[]>(K.sales, []);
+    const sale = sales.find((s) => s.id === input.saleId);
+    if (!sale) throw new Error('Venta no encontrada');
+    if (sale.status === 'cancelled') throw new Error('El ticket ya está anulado');
+
+    // No anular si pertenece a un cierre de caja ya cerrado.
+    if (sale.cashSessionId) {
+      const session = read<CashSession[]>(K.cashSessions, []).find((s) => s.id === sale.cashSessionId);
+      if (session && session.status === 'closed') {
+        throw new Error('El ticket está incluido en un cierre de caja cerrado y no puede anularse');
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // Reintegro de stock (opcional)
+    if (input.restock) {
+      const products = read<Product[]>(K.products, []);
+      const stockMoves = read<StockMovement[]>(K.stockMovements, []);
+      for (const item of sale.items) {
+        const prod = products.find((p) => p.id === item.productId);
+        if (prod && prod.trackStock) {
+          const remaining = round2(item.quantity - item.returnedQty);
+          if (remaining > 0) {
+            prod.stock = round2(prod.stock + remaining);
+            prod.updatedAt = now;
+            stockMoves.push({
+              id: uid(),
+              createdAt: now,
+              productId: prod.id,
+              productName: prod.name,
+              type: 'return',
+              quantity: remaining,
+              resultingStock: prod.stock,
+              reference: `Anulación #${sale.number}`,
+              userId: input.userId,
+            });
+          }
+        }
+      }
+      write(K.products, products);
+      write(K.stockMovements, stockMoves);
+    }
+
+    sale.status = 'cancelled';
+    write(K.sales, sales);
+
+    const cancellation: SaleCancellation = {
+      id: uid(),
+      saleId: sale.id,
+      saleNumber: sale.number,
+      createdAt: now,
+      cancelledById: input.userId,
+      cancelledByName: input.userName,
+      reason: input.reason,
+      originalTotal: sale.total,
+      paymentMethods: [...new Set(sale.payments.map((p) => p.method))],
+      cashSessionId: sale.cashSessionId,
+      restock: input.restock,
+    };
+    const list = read<SaleCancellation[]>(K.cancellations, []);
+    list.unshift(cancellation);
+    write(K.cancellations, list);
+    return ok(cancellation);
+  }
+
+  async listCancellations(): Promise<SaleCancellation[]> {
+    return ok(read<SaleCancellation[]>(K.cancellations, []));
   }
 
   /* --------------------------- Returns ---------------------------- */
@@ -376,12 +488,18 @@ export class LocalRepository implements Repository {
     if (!session) throw new Error('Sesión de caja no encontrada');
 
     const expectedCash = this.computeExpectedCash(session);
+    const sessionSales = read<Sale[]>(K.sales, []).filter((s) => s.cashSessionId === session.id);
+    const summary = summarizeSales(sessionSales);
+
     session.status = 'closed';
     session.closedAt = new Date().toISOString();
     session.closedById = input.userId;
     session.countedCash = round2(input.countedCash);
     session.expectedCash = expectedCash;
     session.difference = round2(input.countedCash - expectedCash);
+    session.salesTotal = summary.net;
+    session.cardTotal = round2(summary.byMethod.card + summary.byMethod.bizum);
+    session.cancellationsTotal = summary.cancelled;
     session.note = input.note ?? session.note;
     write(K.cashSessions, sessions);
     return ok(session);
@@ -389,7 +507,10 @@ export class LocalRepository implements Repository {
 
   /** Efectivo esperado = fondo + ventas efectivo + entradas - salidas - devoluciones efectivo. */
   private computeExpectedCash(session: CashSession): number {
-    const sales = read<Sale[]>(K.sales, []).filter((s) => s.cashSessionId === session.id);
+    // Excluye las ventas anuladas: su efectivo no está en el cajón.
+    const sales = read<Sale[]>(K.sales, []).filter(
+      (s) => s.cashSessionId === session.id && s.status !== 'cancelled',
+    );
     const cashSales = sales.reduce(
       (acc, s) => acc + s.payments.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0),
       0,
@@ -465,7 +586,9 @@ export class LocalRepository implements Repository {
 
   /* --------------------------- Settings --------------------------- */
   async getSettings(): Promise<Settings> {
-    return ok(read<Settings>(K.settings, seedSettings));
+    // Mezcla con los valores por defecto para que ajustes guardados antes de
+    // añadir nuevos campos (p. ej. plantilla de ticket) no queden incompletos.
+    return ok({ ...seedSettings, ...read<Partial<Settings>>(K.settings, {}) });
   }
   async saveSettings(s: Settings): Promise<Settings> {
     write(K.settings, s);

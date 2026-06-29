@@ -15,7 +15,9 @@ import type {
   Category,
   Customer,
   Product,
+  ProductPriceChange,
   Sale,
+  SaleCancellation,
   SaleReturn,
   Settings,
   StockMovement,
@@ -24,6 +26,7 @@ import type {
 } from '@/domain/types';
 import type {
   AdjustStockInput,
+  CancelSaleInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
@@ -75,6 +78,14 @@ const fromProduct = (p: Product) => ({
   active: p.active,
 });
 
+const toPriceChange = (r: any): ProductPriceChange => ({
+  id: r.id,
+  productId: r.product_id,
+  oldPrice: Number(r.old_price),
+  newPrice: Number(r.new_price),
+  changedAt: r.changed_at,
+});
+
 const toCategory = (r: any): Category => ({
   id: r.id,
   name: r.name,
@@ -98,8 +109,15 @@ const toCustomer = (r: any): Customer => ({
   phone: r.phone ?? undefined,
   email: r.email ?? undefined,
   taxId: r.tax_id ?? undefined,
+  address: r.address ?? undefined,
+  postalCode: r.postal_code ?? undefined,
+  city: r.city ?? undefined,
+  province: r.province ?? undefined,
+  country: r.country ?? undefined,
   notes: r.notes ?? undefined,
+  active: r.active ?? true,
   createdAt: r.created_at ?? undefined,
+  updatedAt: r.updated_at ?? undefined,
 });
 
 const toSale = (r: any): Sale => ({
@@ -118,7 +136,10 @@ const toSale = (r: any): Sale => ({
   total: Number(r.total),
   cashGiven: r.cash_given != null ? Number(r.cash_given) : undefined,
   changeGiven: r.change_given != null ? Number(r.change_given) : undefined,
+  customerSnapshot: r.customer_snapshot ?? null,
   note: r.note ?? undefined,
+  printStatus: r.print_status ?? undefined,
+  ticketTemplateVersion: r.ticket_template_version ?? undefined,
   items: (r.sale_items ?? []).map((i: any) => ({
     id: i.id,
     productId: i.product_id,
@@ -147,6 +168,9 @@ const toCashSession = (r: any): CashSession => ({
   countedCash: r.counted_cash != null ? Number(r.counted_cash) : undefined,
   expectedCash: r.expected_cash != null ? Number(r.expected_cash) : undefined,
   difference: r.difference != null ? Number(r.difference) : undefined,
+  salesTotal: r.sales_total != null ? Number(r.sales_total) : undefined,
+  cardTotal: r.card_total != null ? Number(r.card_total) : undefined,
+  cancellationsTotal: r.cancellations_total != null ? Number(r.cancellations_total) : undefined,
   note: r.note ?? undefined,
 });
 
@@ -191,6 +215,19 @@ const toReturn = (r: any): SaleReturn => ({
     quantity: Number(i.quantity),
     refundAmount: Number(i.refund_amount),
   })),
+});
+const toCancellation = (r: any): SaleCancellation => ({
+  id: r.id,
+  saleId: r.sale_id,
+  saleNumber: Number(r.sale_number),
+  createdAt: r.created_at,
+  cancelledById: r.cancelled_by_id,
+  cancelledByName: r.cancelled_by_name,
+  reason: r.reason,
+  originalTotal: Number(r.original_total),
+  paymentMethods: r.payment_methods ?? [],
+  cashSessionId: r.cash_session_id ?? null,
+  restock: r.restock,
 });
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -263,13 +300,34 @@ export class SupabaseRepository implements Repository {
     const { error } = await this.sb.from('products').update({ active: false }).eq('id', id);
     if (error) throw new Error(error.message);
   }
+  async listPriceHistory(productId: UUID): Promise<ProductPriceChange[]> {
+    const { data, error } = await this.sb
+      .from('product_price_history')
+      .select('*')
+      .eq('product_id', productId)
+      .order('changed_at', { ascending: false });
+    return guard(data, error).map(toPriceChange);
+  }
 
   async listCustomers(): Promise<Customer[]> {
     const { data, error } = await this.sb.from('customers').select('*').order('name');
     return guard(data, error).map(toCustomer);
   }
   async saveCustomer(c: Customer): Promise<Customer> {
-    const row = { id: c.id || undefined, name: c.name, phone: c.phone ?? null, email: c.email ?? null, tax_id: c.taxId ?? null, notes: c.notes ?? null };
+    const row = {
+      id: c.id || undefined,
+      name: c.name,
+      phone: c.phone ?? null,
+      email: c.email ?? null,
+      tax_id: c.taxId ?? null,
+      address: c.address ?? null,
+      postal_code: c.postalCode ?? null,
+      city: c.city ?? null,
+      province: c.province ?? null,
+      country: c.country ?? null,
+      notes: c.notes ?? null,
+      active: c.active ?? true,
+    };
     const { data, error } = await this.sb.from('customers').upsert(row).select().single();
     return toCustomer(guard(data, error));
   }
@@ -300,6 +358,35 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.sb.from('sales').select('*, sale_items(*), payments(*)').eq('id', id).single();
     if (error) return null;
     return data ? toSale(data) : null;
+  }
+  async setSalePrintStatus(saleId: UUID, status: 'pending' | 'printed' | 'failed'): Promise<void> {
+    const { error } = await this.sb.from('sales').update({ print_status: status }).eq('id', saleId);
+    if (error) throw new Error(error.message);
+  }
+
+  async cancelSale(input: CancelSaleInput): Promise<SaleCancellation> {
+    const { data, error } = await this.sb.rpc('cancel_sale', {
+      p_sale_id: input.saleId,
+      p_user_id: input.userId,
+      p_user_name: input.userName,
+      p_reason: input.reason,
+      p_restock: input.restock,
+    });
+    if (error) throw new Error(error.message);
+    const id = typeof data === 'string' ? data : data?.id;
+    const { data: row, error: e2 } = await this.sb
+      .from('sale_cancellations')
+      .select('*')
+      .eq('id', id)
+      .single();
+    return toCancellation(guard(row, e2));
+  }
+  async listCancellations(): Promise<SaleCancellation[]> {
+    const { data, error } = await this.sb
+      .from('sale_cancellations')
+      .select('*')
+      .order('created_at', { ascending: false });
+    return guard(data, error).map(toCancellation);
   }
 
   async processReturn(input: ProcessReturnInput): Promise<SaleReturn> {
@@ -381,6 +468,12 @@ export class SupabaseRepository implements Repository {
       ticketFooter: data.ticket_footer,
       currency: data.currency,
       defaultIva: data.default_iva,
+      ticketWidth: (data.ticket_width as Settings['ticketWidth']) ?? '80',
+      showTaxBreakdown: data.show_tax_breakdown ?? true,
+      headerText: data.header_text ?? '',
+      returnPolicy: data.return_policy ?? '',
+      legalText: data.legal_text ?? '',
+      logoUrl: data.logo_url ?? undefined,
     };
   }
   async saveSettings(s: Settings): Promise<Settings> {
@@ -395,6 +488,12 @@ export class SupabaseRepository implements Repository {
       ticket_footer: s.ticketFooter,
       currency: s.currency,
       default_iva: s.defaultIva,
+      ticket_width: s.ticketWidth,
+      show_tax_breakdown: s.showTaxBreakdown,
+      header_text: s.headerText,
+      return_policy: s.returnPolicy,
+      legal_text: s.legalText,
+      logo_url: s.logoUrl ?? null,
     };
     const { error } = await this.sb.from('settings').upsert(row);
     if (error) throw new Error(error.message);

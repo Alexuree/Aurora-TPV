@@ -67,6 +67,15 @@ export interface Product {
   updatedAt?: ISODate;
 }
 
+/** Registro de cambio de precio de un producto (historial). */
+export interface ProductPriceChange {
+  id: UUID;
+  productId: UUID;
+  oldPrice: number;
+  newPrice: number;
+  changedAt: ISODate;
+}
+
 /* ---------------------------- Clientes ----------------------------- */
 
 export interface Customer {
@@ -74,9 +83,32 @@ export interface Customer {
   name: string;
   phone?: string;
   email?: string;
-  taxId?: string; // NIF/CIF
+  taxId?: string; // NIF/CIF/NIE
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  province?: string;
+  country?: string;
   notes?: string;
+  /** Baja lógica: no se borra para conservar el histórico de ventas. */
+  active?: boolean;
   createdAt?: ISODate;
+  updatedAt?: ISODate;
+}
+
+/**
+ * Copia inmutable de los datos fiscales del cliente en el momento de la venta.
+ * Garantiza que editar el cliente después NO altere tickets antiguos.
+ */
+export interface CustomerSnapshot {
+  name: string;
+  taxId?: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  province?: string;
+  phone?: string;
+  email?: string;
 }
 
 /* ------------------------------ Ticket ----------------------------- */
@@ -174,7 +206,13 @@ export interface Sale {
   /** Importe entregado en efectivo y cambio devuelto (informativo). */
   cashGiven?: number;
   changeGiven?: number;
+  /** Datos fiscales del cliente congelados en el momento de la venta. */
+  customerSnapshot?: CustomerSnapshot | null;
   note?: string;
+  /** Estado de impresión del ticket. */
+  printStatus?: 'pending' | 'printed' | 'failed';
+  /** Versión de la plantilla con la que se generó el ticket. */
+  ticketTemplateVersion?: number;
 }
 
 /* --------------------------- Devoluciones -------------------------- */
@@ -202,6 +240,23 @@ export interface SaleReturn {
   restock: boolean;
 }
 
+/* --------------------------- Anulaciones --------------------------- */
+
+/** Registro de anulación de un ticket (no se borra el ticket original). */
+export interface SaleCancellation {
+  id: UUID;
+  saleId: UUID;
+  saleNumber: number;
+  createdAt: ISODate;
+  cancelledById: UUID;
+  cancelledByName: string;
+  reason: string;
+  originalTotal: number;
+  paymentMethods: PaymentMethod[];
+  cashSessionId: UUID | null;
+  restock: boolean;
+}
+
 /* ------------------------------ Caja ------------------------------- */
 
 export type CashSessionStatus = 'open' | 'closed';
@@ -219,6 +274,10 @@ export interface CashSession {
   countedCash?: number;
   expectedCash?: number;
   difference?: number;
+  /** Totales de la sesión (calculados al cerrar). */
+  salesTotal?: number; // ventas netas (sin anuladas)
+  cardTotal?: number; // tarjeta + bizum
+  cancellationsTotal?: number; // total anulado
   note?: string;
 }
 
@@ -250,6 +309,8 @@ export interface StockMovement {
 
 /* ---------------------------- Ajustes ------------------------------ */
 
+export type TicketWidth = '58' | '80';
+
 export interface Settings {
   storeName: string;
   legalName: string;
@@ -260,4 +321,11 @@ export interface Settings {
   ticketFooter: string;
   currency: string; // 'EUR'
   defaultIva: IvaRate;
+  // --- Plantilla de ticket ---
+  ticketWidth: TicketWidth; // 58mm o 80mm
+  showTaxBreakdown: boolean; // mostrar desglose de IVA
+  headerText: string; // texto bajo los datos de tienda
+  returnPolicy: string; // política de devoluciones
+  legalText: string; // mensaje legal (RGPD, etc.)
+  logoUrl?: string; // data URL o ruta del logo
 }

@@ -4,10 +4,12 @@
 // =====================================================================
 
 import { useMemo, useState } from 'react';
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { History, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import type { IvaRate, Product } from '@/domain/types';
-import { useCategories, useDeleteProduct, useProducts, useSaveProduct } from '@/hooks/data';
+import { useCategories, useDeleteProduct, useProductPriceHistory, useProducts, useSaveProduct } from '@/hooks/data';
 import { formatMoney } from '@/domain/money';
+import { formatDateTime } from '@/lib/format';
+import { validateProduct } from '@/domain/products';
 import { Badge, Button, Field, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
 
 const empty: Product = {
@@ -102,6 +104,7 @@ export function ProductsPage() {
       {editing && (
         <ProductFormModal
           product={editing}
+          all={products}
           categories={categories}
           saving={save.isPending}
           onClose={() => setEditing(null)}
@@ -112,8 +115,9 @@ export function ProductsPage() {
   );
 }
 
-function ProductFormModal({ product, categories, onClose, onSave, saving }: {
+function ProductFormModal({ product, all, categories, onClose, onSave, saving }: {
   product: Product;
+  all: Product[];
   categories: { id: string; name: string }[];
   onClose: () => void;
   onSave: (p: Product) => void;
@@ -122,16 +126,21 @@ function ProductFormModal({ product, categories, onClose, onSave, saving }: {
   const [form, setForm] = useState<Product>(product);
   const set = <K extends keyof Product>(k: K, v: Product[K]) => setForm((f) => ({ ...f, [k]: v }));
   const isNew = !product.id;
+  const validation = validateProduct(form, all, product.id || undefined);
+  const { data: priceHistory = [] } = useProductPriceHistory(product.id || undefined);
 
   return (
     <Modal open onClose={onClose} size="lg" title={isNew ? 'Nuevo producto' : 'Editar producto'} footer={
       <>
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
-        <Button disabled={!form.name.trim() || saving} onClick={() => onSave(form)}>{saving ? 'Guardando…' : 'Guardar'}</Button>
+        <Button disabled={!validation.ok || saving} onClick={() => onSave(form)}>{saving ? 'Guardando…' : 'Guardar'}</Button>
       </>
     }>
       <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2"><Field label="Nombre *"><input className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} /></Field></div>
+        <div className="col-span-2">
+          <Field label="Nombre *"><input className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} /></Field>
+          {validation.errors.name && <p className="mt-1 text-xs text-rose-600">{validation.errors.name}</p>}
+        </div>
         <Field label="Marca"><input className={inputClass} value={form.brand ?? ''} onChange={(e) => set('brand', e.target.value)} /></Field>
         <Field label="Categoría">
           <select className={inputClass} value={form.categoryId ?? ''} onChange={(e) => set('categoryId', e.target.value || null)}>
@@ -139,9 +148,15 @@ function ProductFormModal({ product, categories, onClose, onSave, saving }: {
             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
-        <Field label="Código de barras"><input className={inputClass} value={form.barcode ?? ''} onChange={(e) => set('barcode', e.target.value)} /></Field>
+        <div>
+          <Field label="Código de barras"><input className={inputClass} value={form.barcode ?? ''} onChange={(e) => set('barcode', e.target.value)} /></Field>
+          {validation.errors.barcode && <p className="mt-1 text-xs text-rose-600">{validation.errors.barcode}</p>}
+        </div>
         <Field label="SKU / Referencia"><input className={inputClass} value={form.sku ?? ''} onChange={(e) => set('sku', e.target.value)} /></Field>
-        <Field label="PVP (€, IVA incl.)"><input type="number" min={0} step="0.01" className={inputClass} value={form.price} onChange={(e) => set('price', parseFloat(e.target.value) || 0)} /></Field>
+        <div>
+          <Field label="PVP (€, IVA incl.)"><input type="number" min={0} step="0.01" className={inputClass} value={form.price} onChange={(e) => set('price', parseFloat(e.target.value) || 0)} /></Field>
+          {validation.errors.price && <p className="mt-1 text-xs text-rose-600">{validation.errors.price}</p>}
+        </div>
         <Field label="Coste (€)"><input type="number" min={0} step="0.01" className={inputClass} value={form.cost ?? 0} onChange={(e) => set('cost', parseFloat(e.target.value) || 0)} /></Field>
         <Field label="IVA">
           <select className={inputClass} value={form.ivaRate} onChange={(e) => set('ivaRate', Number(e.target.value) as IvaRate)}>
@@ -158,6 +173,20 @@ function ProductFormModal({ product, categories, onClose, onSave, saving }: {
             <input type="checkbox" checked={form.active} onChange={(e) => set('active', e.target.checked)} className="h-4 w-4" /> Activo
           </label>
         </div>
+
+        {priceHistory.length > 0 && (
+          <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500"><History size={14} /> Historial de precios</p>
+            <ul className="space-y-1 text-xs">
+              {priceHistory.slice(0, 6).map((h) => (
+                <li key={h.id} className="flex justify-between text-slate-600">
+                  <span>{formatDateTime(h.changedAt)}</span>
+                  <span><span className="text-slate-400 line-through">{formatMoney(h.oldPrice)}</span> → <b className="text-slate-700">{formatMoney(h.newPrice)}</b></span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </Modal>
   );

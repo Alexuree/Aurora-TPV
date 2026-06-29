@@ -1,8 +1,9 @@
 -- ============================================================
--- Aurora TPV — INSTALACIÓN COMPLETA (esquema + datos)
+-- Aurora TPV — INSTALACIÓN COMPLETA (esquema + migraciones + datos)
 -- Pega TODO este archivo en Supabase → SQL Editor → Run
 -- ============================================================
 
+-- ============ migrations/0001_initial_schema.sql ============
 -- =====================================================================
 -- Aurora TPV — Esquema inicial (PostgreSQL / Supabase)
 -- Ejecuta este archivo en el SQL Editor de Supabase (o con la CLI).
@@ -426,6 +427,283 @@ begin
       'create policy p_all_%1$s on %1$s for all to authenticated using (true) with check (true);', t);
   end loop;
 end $$;
+
+
+-- ============ migrations/0002_ticket_and_printing.sql ============
+-- =====================================================================
+-- Aurora TPV — Migración 0002: plantilla de ticket e impresión
+-- Compatible con datos existentes (columnas con DEFAULT).
+-- =====================================================================
+
+-- Configuración de la plantilla de ticket
+alter table settings
+  add column if not exists ticket_width text not null default '80' check (ticket_width in ('58','80')),
+  add column if not exists show_tax_breakdown boolean not null default true,
+  add column if not exists header_text text not null default '',
+  add column if not exists return_policy text not null default '',
+  add column if not exists legal_text text not null default '',
+  add column if not exists logo_url text;
+
+-- Estado de impresión y versión de plantilla por venta
+alter table sales
+  add column if not exists print_status text not null default 'pending'
+    check (print_status in ('pending','printed','failed')),
+  add column if not exists ticket_template_version int not null default 1;
+
+-- process_sale debe marcar la venta como pendiente de imprimir (ya por defecto)
+-- y registrar la versión de plantilla. No requiere cambios: los DEFAULT aplican.
+
+
+-- ============ migrations/0003_ticket_cancellation.sql ============
+-- =====================================================================
+-- Aurora TPV — Migración 0003: anulación segura de tickets
+-- El ticket original se conserva (status='cancelled'); se crea un
+-- registro de anulación con trazabilidad. El cierre de caja ya excluye
+-- las ventas anuladas (ver close_cash_session en 0001).
+-- =====================================================================
+
+create table if not exists sale_cancellations (
+  id uuid primary key default gen_random_uuid(),
+  sale_id uuid not null references sales(id) on delete cascade,
+  sale_number bigint not null,
+  created_at timestamptz not null default now(),
+  cancelled_by_id uuid not null,
+  cancelled_by_name text not null,
+  reason text not null,
+  original_total numeric(10,2) not null,
+  payment_methods text[] not null default '{}',
+  cash_session_id uuid references cash_sessions(id) on delete set null,
+  restock boolean not null default true
+);
+create index if not exists idx_cancellations_sale on sale_cancellations(sale_id);
+
+-- RPC: anula una venta de forma segura y atómica
+create or replace function cancel_sale(
+  p_sale_id uuid, p_user_id uuid, p_user_name text, p_reason text, p_restock boolean
+) returns uuid language plpgsql security definer as $$
+declare
+  v_sale sales%rowtype;
+  v_item sale_items%rowtype;
+  v_prod products%rowtype;
+  v_remaining numeric;
+  v_new_stock numeric;
+  v_cancel_id uuid := gen_random_uuid();
+  v_session_status text;
+  v_methods text[];
+begin
+  select * into v_sale from sales where id = p_sale_id;
+  if not found then raise exception 'Venta no encontrada'; end if;
+  if v_sale.status = 'cancelled' then raise exception 'El ticket ya está anulado'; end if;
+
+  -- No anular si pertenece a un cierre de caja cerrado
+  if v_sale.cash_session_id is not null then
+    select status into v_session_status from cash_sessions where id = v_sale.cash_session_id;
+    if v_session_status = 'closed' then
+      raise exception 'El ticket está incluido en un cierre de caja cerrado y no puede anularse';
+    end if;
+  end if;
+
+  -- Reintegro de stock (de lo no devuelto)
+  if p_restock then
+    for v_item in select * from sale_items where sale_id = p_sale_id loop
+      v_remaining := v_item.quantity - v_item.returned_qty;
+      if v_remaining > 0 then
+        select * into v_prod from products where id = v_item.product_id;
+        if found and v_prod.track_stock then
+          v_new_stock := v_prod.stock + v_remaining;
+          update products set stock = v_new_stock, updated_at = now() where id = v_prod.id;
+          insert into stock_movements(product_id, product_name, type, quantity, resulting_stock, reference, user_id)
+          values (v_prod.id, v_prod.name, 'return', v_remaining, v_new_stock, 'Anulación #'||v_sale.number, p_user_id);
+        end if;
+      end if;
+    end loop;
+  end if;
+
+  update sales set status = 'cancelled' where id = p_sale_id;
+
+  select coalesce(array_agg(distinct method), '{}') into v_methods from payments where sale_id = p_sale_id;
+
+  insert into sale_cancellations(id, sale_id, sale_number, cancelled_by_id, cancelled_by_name,
+    reason, original_total, payment_methods, cash_session_id, restock)
+  values (v_cancel_id, p_sale_id, v_sale.number, p_user_id, p_user_name,
+    p_reason, v_sale.total, v_methods, v_sale.cash_session_id, p_restock);
+
+  return v_cancel_id;
+end; $$;
+
+-- RLS
+alter table sale_cancellations enable row level security;
+drop policy if exists p_all_sale_cancellations on sale_cancellations;
+create policy p_all_sale_cancellations on sale_cancellations
+  for all to authenticated using (true) with check (true);
+
+
+-- ============ migrations/0004_cash_closing_totals.sql ============
+-- =====================================================================
+-- Aurora TPV — Migración 0004: totales en el cierre de caja
+-- Guarda ventas netas, tarjeta y anulado del día en el cierre.
+-- =====================================================================
+
+alter table cash_sessions
+  add column if not exists sales_total numeric(10,2),
+  add column if not exists card_total numeric(10,2),
+  add column if not exists cancellations_total numeric(10,2);
+
+-- close_cash_session: además del efectivo previsto/descuadre, registra
+-- ventas netas, total tarjeta (tarjeta+bizum) y total anulado.
+create or replace function close_cash_session(p_session_id uuid, p_user_id uuid, p_counted_cash numeric, p_note text)
+returns cash_sessions language plpgsql security definer as $$
+declare
+  v_session cash_sessions%rowtype;
+  v_cash_sales numeric;
+  v_cash_in numeric;
+  v_cash_out numeric;
+  v_refunds numeric;
+  v_expected numeric;
+  v_net numeric;
+  v_card numeric;
+  v_cancelled numeric;
+begin
+  select * into v_session from cash_sessions where id = p_session_id;
+
+  select coalesce(sum(p.amount),0) into v_cash_sales
+    from payments p join sales s on s.id = p.sale_id
+    where s.cash_session_id = p_session_id and p.method = 'cash' and s.status <> 'cancelled';
+  select coalesce(sum(amount),0) into v_cash_in from cash_movements where cash_session_id = p_session_id and type = 'in';
+  select coalesce(sum(amount),0) into v_cash_out from cash_movements where cash_session_id = p_session_id and type = 'out';
+  select coalesce(sum(r.total),0) into v_refunds from sale_returns r join sales s on s.id = r.sale_id
+    where s.cash_session_id = p_session_id and r.refund_method = 'cash';
+
+  v_expected := v_session.opening_float + v_cash_sales + v_cash_in - v_cash_out - v_refunds;
+
+  select coalesce(sum(s.total),0) into v_net
+    from sales s where s.cash_session_id = p_session_id and s.status <> 'cancelled';
+  select coalesce(sum(p.amount),0) into v_card
+    from payments p join sales s on s.id = p.sale_id
+    where s.cash_session_id = p_session_id and p.method in ('card','bizum') and s.status <> 'cancelled';
+  select coalesce(sum(s.total),0) into v_cancelled
+    from sales s where s.cash_session_id = p_session_id and s.status = 'cancelled';
+
+  update cash_sessions
+    set status = 'closed', closed_at = now(), closed_by_id = p_user_id, counted_cash = p_counted_cash,
+        expected_cash = v_expected, difference = p_counted_cash - v_expected,
+        sales_total = v_net, card_total = v_card, cancellations_total = v_cancelled,
+        note = coalesce(p_note, note)
+    where id = p_session_id
+    returning * into v_session;
+
+  return v_session;
+end; $$;
+
+
+-- ============ migrations/0005_customer_registry.sql ============
+-- =====================================================================
+-- Aurora TPV — Migración 0005: registro de clientes y snapshot fiscal
+-- Amplía customers y congela los datos del cliente en cada venta.
+-- =====================================================================
+
+alter table customers
+  add column if not exists address text,
+  add column if not exists postal_code text,
+  add column if not exists city text,
+  add column if not exists province text,
+  add column if not exists country text,
+  add column if not exists active boolean not null default true,
+  add column if not exists updated_at timestamptz not null default now();
+
+alter table sales
+  add column if not exists customer_snapshot jsonb;
+
+-- process_sale: ahora guarda customer_snapshot (datos fiscales congelados).
+create or replace function process_sale(payload jsonb)
+returns uuid language plpgsql security definer as $$
+declare
+  v_sale_id uuid := gen_random_uuid();
+  v_number bigint := nextval('sale_number_seq');
+  v_line jsonb;
+  v_pay jsonb;
+  v_prod products%rowtype;
+  v_qty numeric;
+  v_new_stock numeric;
+begin
+  insert into sales(id, number, cashier_id, cashier_name, cash_session_id, customer_id,
+    customer_name, customer_snapshot, status, subtotal, tax_total, discount_total, total,
+    cash_given, change_given, note)
+  values (
+    v_sale_id, v_number,
+    (payload->>'cashierId')::uuid, payload->>'cashierName',
+    nullif(payload->>'cashSessionId','')::uuid,
+    nullif(payload->>'customerId','')::uuid,
+    coalesce(payload->>'customerName','Cliente mostrador'),
+    payload->'customerSnapshot',
+    'completed',
+    (payload->>'subtotal')::numeric, (payload->>'taxTotal')::numeric,
+    (payload->>'discountTotal')::numeric, (payload->>'total')::numeric,
+    nullif(payload->>'cashGiven','')::numeric, nullif(payload->>'changeGiven','')::numeric,
+    nullif(payload->>'note','')
+  );
+
+  for v_line in select * from jsonb_array_elements(payload->'lines') loop
+    insert into sale_items(sale_id, product_id, name, quantity, unit_price, discount_pct,
+      iva_rate, tax_base, tax_amount, line_total)
+    values (v_sale_id, (v_line->>'productId')::uuid, v_line->>'name',
+      (v_line->>'quantity')::numeric, (v_line->>'unitPrice')::numeric, (v_line->>'discountPct')::numeric,
+      (v_line->>'ivaRate')::int, (v_line->>'taxBase')::numeric, (v_line->>'taxAmount')::numeric,
+      (v_line->>'lineTotal')::numeric);
+
+    select * into v_prod from products where id = (v_line->>'productId')::uuid;
+    if found and v_prod.track_stock then
+      v_qty := (v_line->>'quantity')::numeric;
+      v_new_stock := v_prod.stock - v_qty;
+      update products set stock = v_new_stock, updated_at = now() where id = v_prod.id;
+      insert into stock_movements(product_id, product_name, type, quantity, resulting_stock, reference, user_id)
+      values (v_prod.id, v_prod.name, 'sale', -v_qty, v_new_stock, 'Venta #'||v_number, (payload->>'cashierId')::uuid);
+    end if;
+  end loop;
+
+  for v_pay in select * from jsonb_array_elements(payload->'payments') loop
+    insert into payments(sale_id, method, amount)
+    values (v_sale_id, v_pay->>'method', (v_pay->>'amount')::numeric);
+  end loop;
+
+  return v_sale_id;
+end; $$;
+
+
+-- ============ migrations/0006_product_price_history.sql ============
+-- =====================================================================
+-- Aurora TPV — Migración 0006: historial de cambios de precio
+-- Un trigger registra automáticamente cada cambio de precio.
+-- =====================================================================
+
+create table if not exists product_price_history (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references products(id) on delete cascade,
+  old_price numeric(10,2) not null,
+  new_price numeric(10,2) not null,
+  changed_at timestamptz not null default now()
+);
+create index if not exists idx_price_history_product on product_price_history(product_id);
+
+create or replace function log_price_change()
+returns trigger language plpgsql security definer as $$
+begin
+  if tg_op = 'UPDATE' and new.price is distinct from old.price then
+    insert into product_price_history(product_id, old_price, new_price)
+    values (new.id, old.price, new.price);
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists trg_log_price_change on products;
+create trigger trg_log_price_change
+  after update on products
+  for each row execute function log_price_change();
+
+alter table product_price_history enable row level security;
+drop policy if exists p_all_product_price_history on product_price_history;
+create policy p_all_product_price_history on product_price_history
+  for all to authenticated using (true) with check (true);
 
 
 -- ===================== DATOS SEMILLA =====================

@@ -9,10 +9,13 @@ import type {
   CashSession,
   Category,
   Customer,
+  CustomerSnapshot,
   PaymentMethod,
   PaymentPart,
   Product,
+  ProductPriceChange,
   Sale,
+  SaleCancellation,
   SaleReturn,
   Settings,
   StockMovement,
@@ -40,6 +43,7 @@ export interface ProcessSaleInput {
   cashSessionId: UUID | null;
   customerId: UUID | null;
   customerName: string;
+  customerSnapshot?: CustomerSnapshot | null;
   lines: SaleLineInput[];
   payments: PaymentPart[];
   subtotal: number;
@@ -60,6 +64,14 @@ export interface ProcessReturnInput {
   restock: boolean;
   items: { saleItemId: UUID; productId: UUID; name: string; quantity: number; refundAmount: number }[];
   total: number;
+}
+
+export interface CancelSaleInput {
+  saleId: UUID;
+  userId: UUID;
+  userName: string;
+  reason: string;
+  restock: boolean;
 }
 
 export interface OpenCashInput {
@@ -122,6 +134,7 @@ export interface Repository {
   getProductByCode(code: string): Promise<Product | null>;
   saveProduct(p: Product): Promise<Product>;
   deleteProduct(id: UUID): Promise<void>;
+  listPriceHistory(productId: UUID): Promise<ProductPriceChange[]>;
 
   // Clientes
   listCustomers(): Promise<Customer[]>;
@@ -132,6 +145,11 @@ export interface Repository {
   processSale(input: ProcessSaleInput): Promise<Sale>;
   listSales(filter?: SalesFilter): Promise<Sale[]>;
   getSale(id: UUID): Promise<Sale | null>;
+  setSalePrintStatus(saleId: UUID, status: 'pending' | 'printed' | 'failed'): Promise<void>;
+
+  // Anulaciones
+  cancelSale(input: CancelSaleInput): Promise<SaleCancellation>;
+  listCancellations(): Promise<SaleCancellation[]>;
 
   // Devoluciones
   processReturn(input: ProcessReturnInput): Promise<SaleReturn>;
