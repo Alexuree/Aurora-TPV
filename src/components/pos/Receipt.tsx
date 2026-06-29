@@ -58,9 +58,17 @@ export function Receipt({ sale, settings }: { sale: Sale; settings: Settings }) 
         <span>Atendido por</span>
         <span>{sale.cashierName}</span>
       </div>
-      {sale.customerName && sale.customerName !== 'Cliente mostrador' && (
+      {sale.customerSnapshot ? (
+        <div className="mt-1 border-t border-dotted border-black pt-1">
+          <p className="font-bold">{sale.customerSnapshot.name}</p>
+          {sale.customerSnapshot.taxId && <p>NIF/CIF: {sale.customerSnapshot.taxId}</p>}
+          {sale.customerSnapshot.address && (
+            <p>{[sale.customerSnapshot.address, sale.customerSnapshot.postalCode, sale.customerSnapshot.city].filter(Boolean).join(' · ')}</p>
+          )}
+        </div>
+      ) : sale.customerName && sale.customerName !== 'Cliente mostrador' ? (
         <div className="flex justify-between"><span>Cliente</span><span>{sale.customerName}</span></div>
-      )}
+      ) : null}
 
       <Divider />
       <table className="w-full">

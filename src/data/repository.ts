@@ -9,6 +9,7 @@ import type {
   CashSession,
   Category,
   Customer,
+  CustomerSnapshot,
   PaymentMethod,
   PaymentPart,
   Product,
@@ -41,6 +42,7 @@ export interface ProcessSaleInput {
   cashSessionId: UUID | null;
   customerId: UUID | null;
   customerName: string;
+  customerSnapshot?: CustomerSnapshot | null;
   lines: SaleLineInput[];
   payments: PaymentPart[];
   subtotal: number;

@@ -74,9 +74,32 @@ export interface Customer {
   name: string;
   phone?: string;
   email?: string;
-  taxId?: string; // NIF/CIF
+  taxId?: string; // NIF/CIF/NIE
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  province?: string;
+  country?: string;
   notes?: string;
+  /** Baja lógica: no se borra para conservar el histórico de ventas. */
+  active?: boolean;
   createdAt?: ISODate;
+  updatedAt?: ISODate;
+}
+
+/**
+ * Copia inmutable de los datos fiscales del cliente en el momento de la venta.
+ * Garantiza que editar el cliente después NO altere tickets antiguos.
+ */
+export interface CustomerSnapshot {
+  name: string;
+  taxId?: string;
+  address?: string;
+  postalCode?: string;
+  city?: string;
+  province?: string;
+  phone?: string;
+  email?: string;
 }
 
 /* ------------------------------ Ticket ----------------------------- */
@@ -174,6 +197,8 @@ export interface Sale {
   /** Importe entregado en efectivo y cambio devuelto (informativo). */
   cashGiven?: number;
   changeGiven?: number;
+  /** Datos fiscales del cliente congelados en el momento de la venta. */
+  customerSnapshot?: CustomerSnapshot | null;
   note?: string;
   /** Estado de impresión del ticket. */
   printStatus?: 'pending' | 'printed' | 'failed';
