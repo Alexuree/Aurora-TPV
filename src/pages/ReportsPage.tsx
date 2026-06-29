@@ -8,18 +8,25 @@ import { Download, Euro, Package, Receipt, TrendingUp } from 'lucide-react';
 import { useCategories, useProducts, useSales } from '@/hooks/data';
 import type { Sale } from '@/domain/types';
 import { formatMoney, round2 } from '@/domain/money';
-import { daysAgo, startOfToday } from '@/lib/format';
+import { summarizeSales } from '@/domain/sales';
+import { daysAgo, formatTime, startOfToday } from '@/lib/format';
 import { PAYMENT_LABELS } from '@/domain/payments';
 import { PageHeader, cn } from '@/components/ui';
 
-type Range = 'today' | 'week' | 'month' | 'all';
+type Range = 'today' | 'yesterday' | 'week' | 'month' | 'all';
 
 export function ReportsPage() {
-  const [range, setRange] = useState<Range>('week');
+  const [range, setRange] = useState<Range>('today');
   const { data: products = [] } = useProducts();
   const { data: categories = [] } = useCategories();
-  const filter = range === 'today' ? { from: startOfToday() } : range === 'week' ? { from: daysAgo(7) } : range === 'month' ? { from: daysAgo(30) } : {};
+  const filter =
+    range === 'today' ? { from: startOfToday() }
+    : range === 'yesterday' ? { from: daysAgo(1), to: startOfToday() }
+    : range === 'week' ? { from: daysAgo(7) }
+    : range === 'month' ? { from: daysAgo(30) }
+    : {};
   const { data: sales = [] } = useSales(filter);
+  const summary = useMemo(() => summarizeSales(sales), [sales]);
 
   const costOf = useMemo(() => {
     const map = new Map<string, number>();
@@ -93,13 +100,33 @@ export function ReportsPage() {
 
       <div className="border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-          {([['today', 'Hoy'], ['week', '7 días'], ['month', '30 días'], ['all', 'Todo']] as [Range, string][]).map(([r, label]) => (
+          {([['today', 'Hoy'], ['yesterday', 'Ayer'], ['week', '7 días'], ['month', '30 días'], ['all', 'Todo']] as [Range, string][]).map(([r, label]) => (
             <button key={r} onClick={() => setRange(r)} className={cn('rounded-lg px-4 py-1.5 text-sm font-semibold', range === r ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500')}>{label}</button>
           ))}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
+        {/* Facturación del periodo (bruto / anulado / neto + métodos) */}
+        <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5">
+          <h3 className="mb-3 font-bold text-slate-800">Facturación del periodo</h3>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <Mini label="Bruto" value={formatMoney(summary.gross)} />
+            <Mini label="Anulado" value={`−${formatMoney(summary.cancelled)}`} tone="rose" />
+            <Mini label="Neto" value={formatMoney(summary.net)} tone="brand" />
+            <Mini label="Efectivo" value={formatMoney(summary.byMethod.cash)} />
+            <Mini label="Tarjeta" value={formatMoney(summary.byMethod.card)} />
+            <Mini label="Bizum" value={formatMoney(summary.byMethod.bizum)} />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500">
+            <span>Tickets: <b className="text-slate-700">{summary.ticketCount}</b></span>
+            <span>Anulados: <b className="text-slate-700">{summary.cancelledCount}</b></span>
+            <span>Ticket medio: <b className="text-slate-700">{formatMoney(summary.avgTicket)}</b></span>
+            {summary.firstSaleAt && <span>1ª venta: <b className="text-slate-700">{formatTime(summary.firstSaleAt)}</b></span>}
+            {summary.lastSaleAt && <span>Última venta: <b className="text-slate-700">{formatTime(summary.lastSaleAt)}</b></span>}
+          </div>
+        </section>
+
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <Kpi icon={<Euro size={18} />} label="Facturación" value={formatMoney(kpi.revenue)} accent />
           <Kpi icon={<Receipt size={18} />} label="Tickets" value={String(kpi.tickets)} />
@@ -147,6 +174,16 @@ export function ReportsPage() {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function Mini({ label, value, tone }: { label: string; value: string; tone?: 'rose' | 'brand' }) {
+  const color = tone === 'rose' ? 'text-rose-600' : tone === 'brand' ? 'text-brand-700' : 'text-slate-900';
+  return (
+    <div className="rounded-xl bg-slate-50 px-3 py-2">
+      <p className="text-[11px] font-medium text-slate-500">{label}</p>
+      <p className={cn('text-lg font-bold tabular-nums', color)}>{value}</p>
     </div>
   );
 }

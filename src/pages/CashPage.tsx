@@ -229,16 +229,25 @@ function CloseCashModal({ session, expectedPreview, onClose, onConfirm, pending 
 
 function SessionHistory({ sessions }: { sessions: CashSession[] }) {
   const closed = sessions.filter((s) => s.status === 'closed');
+  const [summary, setSummary] = useState<CashSession | null>(null);
   if (closed.length === 0) return null;
   return (
     <div className="mt-6">
       <h3 className="mb-2 text-sm font-semibold text-slate-500">Cierres anteriores</h3>
       <div className="space-y-2">
         {closed.slice(0, 8).map((s) => (
-          <div key={s.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+          <button
+            key={s.id}
+            onClick={() => setSummary(s)}
+            className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm hover:bg-slate-50"
+          >
             <div>
               <p className="font-medium text-slate-700">{formatDateTime(s.closedAt)}</p>
-              <p className="text-xs text-slate-400">{s.openedByName}</p>
+              <p className="text-xs text-slate-400">
+                {s.openedByName}
+                {s.salesTotal != null && ` · Ventas ${formatMoney(s.salesTotal)}`}
+                {s.cardTotal != null && ` · Tarjeta ${formatMoney(s.cardTotal)}`}
+              </p>
             </div>
             <div className="text-right">
               <p className="font-bold tabular-nums text-slate-800">{formatMoney(s.countedCash ?? 0)}</p>
@@ -246,9 +255,41 @@ function SessionHistory({ sessions }: { sessions: CashSession[] }) {
                 Descuadre {(s.difference ?? 0) > 0 ? '+' : ''}{formatMoney(s.difference ?? 0)}
               </p>
             </div>
-          </div>
+          </button>
         ))}
       </div>
+      {summary && <ClosingSummaryModal session={summary} onClose={() => setSummary(null)} />}
     </div>
   );
+}
+
+function ClosingSummaryModal({ session, onClose }: { session: CashSession; onClose: () => void }) {
+  return (
+    <Modal open onClose={onClose} size="sm" title={`Cierre de caja · ${formatDateTime(session.closedAt)}`} footer={
+      <Button variant="outline" className="no-print w-full" onClick={() => window.print()}>Imprimir resumen</Button>
+    }>
+      <div id="print-area" className="mx-auto w-[300px] font-mono text-[12px] text-black">
+        <p className="text-center text-base font-bold">RESUMEN DE CIERRE</p>
+        <p className="text-center">{formatDateTime(session.closedAt)}</p>
+        <div className="my-2 border-t border-dashed border-black" />
+        <Row k="Abierta por" v={session.openedByName} />
+        <Row k="Fondo inicial" v={formatMoney(session.openingFloat)} />
+        <Row k="Ventas netas" v={formatMoney(session.salesTotal ?? 0)} />
+        <Row k="Total tarjeta" v={formatMoney(session.cardTotal ?? 0)} />
+        <Row k="Anulado" v={formatMoney(session.cancellationsTotal ?? 0)} />
+        <div className="my-2 border-t border-dashed border-black" />
+        <Row k="Efectivo previsto" v={formatMoney(session.expectedCash ?? 0)} />
+        <Row k="Efectivo contado" v={formatMoney(session.countedCash ?? 0)} />
+        <div className="mt-1 flex justify-between font-bold">
+          <span>Descuadre</span>
+          <span>{(session.difference ?? 0) > 0 ? '+' : ''}{formatMoney(session.difference ?? 0)}</span>
+        </div>
+        {session.note && <p className="mt-2 text-[11px]">Obs.: {session.note}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+function Row({ k, v }: { k: string; v: string }) {
+  return <div className="flex justify-between"><span>{k}</span><span>{v}</span></div>;
 }
