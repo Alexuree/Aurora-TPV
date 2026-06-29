@@ -252,6 +252,7 @@ export class LocalRepository implements Repository {
       total: input.total,
       cashGiven: input.cashGiven,
       changeGiven: input.changeGiven,
+      customerSnapshot: input.customerSnapshot ?? null,
       note: input.note,
     };
     const sales = read<Sale[]>(K.sales, []);

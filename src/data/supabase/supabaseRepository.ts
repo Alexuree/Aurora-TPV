@@ -98,8 +98,15 @@ const toCustomer = (r: any): Customer => ({
   phone: r.phone ?? undefined,
   email: r.email ?? undefined,
   taxId: r.tax_id ?? undefined,
+  address: r.address ?? undefined,
+  postalCode: r.postal_code ?? undefined,
+  city: r.city ?? undefined,
+  province: r.province ?? undefined,
+  country: r.country ?? undefined,
   notes: r.notes ?? undefined,
+  active: r.active ?? true,
   createdAt: r.created_at ?? undefined,
+  updatedAt: r.updated_at ?? undefined,
 });
 
 const toSale = (r: any): Sale => ({
@@ -118,6 +125,7 @@ const toSale = (r: any): Sale => ({
   total: Number(r.total),
   cashGiven: r.cash_given != null ? Number(r.cash_given) : undefined,
   changeGiven: r.change_given != null ? Number(r.change_given) : undefined,
+  customerSnapshot: r.customer_snapshot ?? null,
   note: r.note ?? undefined,
   items: (r.sale_items ?? []).map((i: any) => ({
     id: i.id,
@@ -269,7 +277,20 @@ export class SupabaseRepository implements Repository {
     return guard(data, error).map(toCustomer);
   }
   async saveCustomer(c: Customer): Promise<Customer> {
-    const row = { id: c.id || undefined, name: c.name, phone: c.phone ?? null, email: c.email ?? null, tax_id: c.taxId ?? null, notes: c.notes ?? null };
+    const row = {
+      id: c.id || undefined,
+      name: c.name,
+      phone: c.phone ?? null,
+      email: c.email ?? null,
+      tax_id: c.taxId ?? null,
+      address: c.address ?? null,
+      postal_code: c.postalCode ?? null,
+      city: c.city ?? null,
+      province: c.province ?? null,
+      country: c.country ?? null,
+      notes: c.notes ?? null,
+      active: c.active ?? true,
+    };
     const { data, error } = await this.sb.from('customers').upsert(row).select().single();
     return toCustomer(guard(data, error));
   }

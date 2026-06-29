@@ -11,6 +11,7 @@ import { useCart } from '@/store/cartStore';
 import { useCategories, useOpenCashSession, useProcessSale, useProducts, useSettings } from '@/hooks/data';
 import type { CartLine, Sale } from '@/domain/types';
 import { computeLine, computeTotals, lineChargedTotal } from '@/domain/cart';
+import { snapshotFromCustomer } from '@/domain/customers';
 import { Button, Spinner, cn, inputClass } from '@/components/ui';
 import { ProductGrid } from '@/components/pos/ProductGrid';
 import { TicketPanel } from '@/components/pos/TicketPanel';
@@ -101,6 +102,7 @@ export function SalePage() {
       cashSessionId: openSession?.id ?? null,
       customerId: cart.customer?.id ?? null,
       customerName: cart.customer?.name ?? 'Cliente mostrador',
+      customerSnapshot: cart.customer ? snapshotFromCustomer(cart.customer) : null,
       lines,
       payments: result.payments,
       subtotal: totals.subtotal,
