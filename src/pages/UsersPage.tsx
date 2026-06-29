@@ -79,24 +79,34 @@ export function UsersPage() {
 function UserFormModal({ user, onClose, onSave, saving }: { user: User; onClose: () => void; onSave: (u: User) => void; saving: boolean }) {
   const [form, setForm] = useState<User>(user);
   const set = <K extends keyof User>(k: K, v: User[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const isNew = !user.id;
+  const password = form.pin?.trim() ?? '';
+  const usernameOk = dataMode === 'supabase' ? /.+@.+\..+/.test(form.username.trim()) : Boolean(form.username.trim());
+  const credentialOk = dataMode === 'local' ? (!isNew || password.length >= 4) : (!isNew || password.length >= 6);
+  const canSave = Boolean(form.fullName.trim()) && usernameOk && credentialOk && !saving;
   return (
     <Modal open onClose={onClose} title={user.id ? 'Editar usuario' : 'Nuevo usuario'} footer={
       <>
         <Button variant="outline" onClick={onClose}>Cancelar</Button>
-        <Button disabled={!form.fullName.trim() || !form.username.trim() || saving} onClick={() => onSave(form)}>Guardar</Button>
+        <Button disabled={!canSave} onClick={() => onSave(form)}>Guardar</Button>
       </>
     }>
       <div className="space-y-3">
         <Field label="Nombre completo *"><input className={inputClass} value={form.fullName} onChange={(e) => set('fullName', e.target.value)} /></Field>
         <Field label={dataMode === 'supabase' ? 'Email *' : 'Usuario *'}><input className={inputClass} value={form.username} onChange={(e) => set('username', e.target.value)} /></Field>
+        {!usernameOk && form.username && <p className="text-xs text-rose-600">Introduce un {dataMode === 'supabase' ? 'email válido' : 'usuario válido'}.</p>}
         <Field label="Rol">
           <select className={inputClass} value={form.role} onChange={(e) => set('role', e.target.value as Role)}>
             {(Object.keys(ROLE_LABELS) as Role[]).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
           </select>
         </Field>
-        {dataMode === 'local' && (
-          <Field label="PIN de acceso" hint="4 dígitos para iniciar sesión rápido."><input className={inputClass} value={form.pin ?? ''} onChange={(e) => set('pin', e.target.value)} maxLength={6} /></Field>
-        )}
+        <Field
+          label={dataMode === 'supabase' ? (isNew ? 'Contraseña inicial *' : 'Nueva contraseña (opcional)') : 'PIN de acceso *'}
+          hint={dataMode === 'supabase' ? 'Mínimo 6 caracteres para usuarios nuevos.' : 'Mínimo 4 dígitos para iniciar sesión rápido.'}
+        >
+          <input className={inputClass} type={dataMode === 'supabase' ? 'password' : 'text'} value={form.pin ?? ''} onChange={(e) => set('pin', e.target.value)} maxLength={dataMode === 'local' ? 6 : undefined} />
+        </Field>
+        {!credentialOk && <p className="text-xs text-rose-600">{dataMode === 'supabase' ? 'La contraseña inicial debe tener al menos 6 caracteres.' : 'El PIN debe tener al menos 4 dígitos.'}</p>}
         <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
           <input type="checkbox" checked={form.active} onChange={(e) => set('active', e.target.checked)} className="h-4 w-4" /> Usuario activo
         </label>

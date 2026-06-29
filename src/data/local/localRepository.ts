@@ -9,6 +9,7 @@ import type {
   CashSession,
   Category,
   Customer,
+  AuditEvent,
   Sale,
   SaleCancellation,
   SaleItem,
@@ -17,6 +18,7 @@ import type {
   UUID,
 } from '@/domain/types';
 import { round2 } from '@/domain/money';
+import { fiscalHashPayload, invoiceTypeForSale, seriesForInvoice, sha256Hex } from '@/domain/fiscal';
 import { summarizeSales } from '@/domain/sales';
 import { uid } from '@/lib/uid';
 import { seedCategories, seedProducts, seedSettings, seedUsers } from '@/data/seed';
@@ -42,6 +44,7 @@ const K = {
   cancellations: `${NS}:cancellations`,
   cashSessions: `${NS}:cashSessions`,
   cashMovements: `${NS}:cashMovements`,
+  auditEvents: `${NS}:auditEvents`,
   settings: `${NS}:settings`,
   saleSeq: `${NS}:saleSeq`,
   seeded: `${NS}:seeded`,
@@ -89,6 +92,7 @@ export class LocalRepository implements Repository {
     write(K.cancellations, []);
     write(K.cashSessions, []);
     write(K.cashMovements, []);
+    write(K.auditEvents, []);
     write(K.settings, seedSettings);
     localStorage.setItem(K.saleSeq, '1000');
     localStorage.setItem(K.seeded, '1');
@@ -110,10 +114,12 @@ export class LocalRepository implements Repository {
   async saveUser(user: User): Promise<User> {
     const users = read<User[]>(K.users, []);
     const idx = users.findIndex((u) => u.id === user.id);
-    const saved = { ...user, id: user.id || uid(), createdAt: user.createdAt ?? new Date().toISOString() };
+    const prev = idx >= 0 ? users[idx] : undefined;
+    const saved = { ...user, pin: user.pin || prev?.pin, id: user.id || uid(), createdAt: user.createdAt ?? new Date().toISOString() };
     if (idx >= 0) users[idx] = saved;
     else users.push(saved);
     write(K.users, users);
+    this.audit('user_updated', { userId: saved.id, userName: saved.fullName, entity: 'user', entityId: saved.id });
     return ok(saved);
   }
   async deleteUser(id: UUID): Promise<void> {
@@ -212,6 +218,10 @@ export class LocalRepository implements Repository {
   async processSale(input: ProcessSaleInput): Promise<Sale> {
     const now = new Date().toISOString();
     const number = nextSeq(K.saleSeq);
+    const settings = { ...seedSettings, ...read<Partial<Settings>>(K.settings, {}) };
+    const invoiceType = invoiceTypeForSale(settings, Boolean(input.customerSnapshot?.taxId));
+    const series = seriesForInvoice(settings, invoiceType);
+    const previousFiscalHash = read<Sale[]>(K.sales, []).find((s) => s.fiscalHash)?.fiscalHash ?? null;
 
     const items: SaleItem[] = input.lines.map((l) => ({
       id: uid(),
@@ -249,10 +259,32 @@ export class LocalRepository implements Repository {
       note: input.note,
       printStatus: 'pending',
       ticketTemplateVersion: 1,
+      invoiceType,
+      series,
+      fiscalNumber: `${series}-${number}`,
+      fiscalMode: settings.fiscalMode,
+      previousFiscalHash,
     };
+    sale.fiscalHash = await sha256Hex(fiscalHashPayload(sale));
     const sales = read<Sale[]>(K.sales, []);
     sales.unshift(sale);
     write(K.sales, sales);
+    this.audit('sale_created', {
+      userId: input.cashierId,
+      userName: input.cashierName,
+      entity: 'sale',
+      entityId: sale.id,
+      details: { number: sale.number, total: sale.total, invoiceType, fiscalHash: sale.fiscalHash },
+    });
+    if (input.lines.some((l) => l.discountPct > 0)) {
+      this.audit('discount_applied', {
+        userId: input.cashierId,
+        userName: input.cashierName,
+        entity: 'sale',
+        entityId: sale.id,
+        details: { number: sale.number, discountTotal: sale.discountTotal },
+      });
+    }
     return ok(sale);
   }
 
@@ -322,6 +354,13 @@ export class LocalRepository implements Repository {
     const list = read<SaleCancellation[]>(K.cancellations, []);
     list.unshift(cancellation);
     write(K.cancellations, list);
+    this.audit('sale_cancelled', {
+      userId: input.userId,
+      userName: input.userName,
+      entity: 'sale',
+      entityId: sale.id,
+      details: { number: sale.number, total: sale.total },
+    });
     return ok(cancellation);
   }
 
@@ -350,6 +389,13 @@ export class LocalRepository implements Repository {
     };
     sessions.unshift(session);
     write(K.cashSessions, sessions);
+    this.audit('cash_opened', {
+      userId: input.userId,
+      userName: input.userName,
+      entity: 'cash_session',
+      entityId: session.id,
+      details: { openingFloat: input.openingFloat },
+    });
     return ok(session);
   }
 
@@ -373,6 +419,12 @@ export class LocalRepository implements Repository {
     session.cancellationsTotal = summary.cancelled;
     session.note = input.note ?? session.note;
     write(K.cashSessions, sessions);
+    this.audit('cash_closed', {
+      userId: input.userId,
+      entity: 'cash_session',
+      entityId: session.id,
+      details: { expectedCash, countedCash: input.countedCash, salesTotal: session.salesTotal, cardTotal: session.cardTotal },
+    });
     return ok(session);
   }
 
@@ -427,6 +479,13 @@ export class LocalRepository implements Repository {
   }
   async saveSettings(s: Settings): Promise<Settings> {
     write(K.settings, s);
+    this.audit('settings_updated', { entity: 'settings', details: { fiscalMode: s.fiscalMode } });
     return ok(s);
+  }
+
+  private audit(type: AuditEvent['type'], event: Omit<AuditEvent, 'id' | 'createdAt' | 'type'>): void {
+    const events = read<AuditEvent[]>(K.auditEvents, []);
+    events.unshift({ id: uid(), createdAt: new Date().toISOString(), type, ...event });
+    write(K.auditEvents, events.slice(0, 5000));
   }
 }

@@ -27,10 +27,12 @@ union all select 'cashier', code from permissions where code in ('sell','open_cl
 on conflict do nothing;
 
 -- Ajustes de la tienda
-insert into settings(id, store_name, legal_name, tax_id, address, phone, email, ticket_footer, currency, default_iva)
+insert into settings(id, store_name, legal_name, tax_id, address, phone, email, ticket_footer, currency, default_iva,
+  fiscal_mode, simplified_invoice_series, complete_invoice_series, default_invoice_type, enable_fiscal_qr)
 values (1, 'Aurora Perfumería & Fotografía', 'Aurora Comercio S.L.', 'B12345678',
   'C/ Mayor 12, 28013 Madrid', '910 000 000', 'hola@auroratpv.es',
-  '¡Gracias por su compra! Conserve este ticket para cambios y devoluciones (30 días).', 'EUR', 21)
+  '¡Gracias por su compra!', 'EUR', 21,
+  'no_verifactu', 'FS', 'FC', 'simplified', true)
 on conflict (id) do nothing;
 
 -- Categorías (UUID fijos para enlazar productos)

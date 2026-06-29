@@ -1,5 +1,6 @@
 // Panel del ticket actual: líneas, totales y acciones de cobro.
 
+import { useEffect, useState } from 'react';
 import { Minus, Plus, Trash2, User as UserIcon, X } from 'lucide-react';
 import { useCart } from '@/store/cartStore';
 import type { CartLine } from '@/domain/types';
@@ -14,7 +15,7 @@ interface Props {
 }
 
 export function TicketPanel({ onCharge, onEditLine, onSelectCustomer }: Props) {
-  const { lines, customer, incQuantity, removeLine, clear } = useCart();
+  const { lines, customer, incQuantity, setQuantity, removeLine, clear } = useCart();
   const totals = computeTotals(lines);
   const empty = lines.length === 0;
 
@@ -75,7 +76,7 @@ export function TicketPanel({ onCharge, onEditLine, onSelectCustomer }: Props) {
                       >
                         <Minus size={14} />
                       </button>
-                      <span className="w-9 text-center text-sm font-semibold tabular-nums">{line.quantity}</span>
+                      <LineQuantityInput quantity={line.quantity} onChange={(qty) => setQuantity(line.lineId, qty)} />
                       <button
                         onClick={() => incQuantity(line.lineId, 1)}
                         className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -130,6 +131,38 @@ export function TicketPanel({ onCharge, onEditLine, onSelectCustomer }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+function LineQuantityInput({ quantity, onChange }: { quantity: number; onChange: (qty: number) => void }) {
+  const [draft, setDraft] = useState(String(quantity));
+
+  useEffect(() => {
+    setDraft(String(quantity));
+  }, [quantity]);
+
+  const commit = () => {
+    const next = Number(draft.replace(',', '.'));
+    if (!Number.isFinite(next) || next <= 0) {
+      setDraft(String(quantity));
+      return;
+    }
+    onChange(next);
+  };
+
+  return (
+    <input
+      type="number"
+      min={0.01}
+      step="1"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+      className="h-7 w-14 rounded-lg border border-slate-200 text-center text-sm font-semibold tabular-nums text-slate-700 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+    />
   );
 }
 

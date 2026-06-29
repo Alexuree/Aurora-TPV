@@ -6,6 +6,9 @@
 export type UUID = string;
 export type ISODate = string;
 
+export type FiscalMode = 'no_verifactu' | 'verifactu';
+export type InvoiceType = 'simplified' | 'complete';
+
 /* ----------------------------- Usuarios ---------------------------- */
 
 export type Role = 'admin' | 'manager' | 'cashier';
@@ -207,6 +210,13 @@ export interface Sale {
   printStatus?: 'pending' | 'printed' | 'failed';
   /** Versión de la plantilla con la que se generó el ticket. */
   ticketTemplateVersion?: number;
+  /** Datos fiscales preparados para NO-VERIFACTU/VERI*FACTU. */
+  invoiceType?: InvoiceType;
+  series?: string;
+  fiscalNumber?: string;
+  fiscalMode?: FiscalMode;
+  previousFiscalHash?: string | null;
+  fiscalHash?: string;
 }
 
 /* --------------------------- Anulaciones --------------------------- */
@@ -282,4 +292,30 @@ export interface Settings {
   returnPolicy: string;
   legalText: string; // mensaje legal (RGPD, etc.)
   logoUrl?: string; // data URL o ruta del logo
+  fiscalMode: FiscalMode;
+  simplifiedInvoiceSeries: string;
+  completeInvoiceSeries: string;
+  defaultInvoiceType: InvoiceType;
+  enableFiscalQr: boolean;
+}
+
+export type AuditEventType =
+  | 'sale_created'
+  | 'sale_cancelled'
+  | 'cash_opened'
+  | 'cash_closed'
+  | 'discount_applied'
+  | 'settings_updated'
+  | 'backup_created'
+  | 'user_updated';
+
+export interface AuditEvent {
+  id: UUID;
+  createdAt: ISODate;
+  type: AuditEventType;
+  userId?: UUID;
+  userName?: string;
+  entity?: string;
+  entityId?: UUID;
+  details?: Record<string, unknown>;
 }

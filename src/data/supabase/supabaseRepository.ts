@@ -130,6 +130,12 @@ const toSale = (r: any): Sale => ({
   note: r.note ?? undefined,
   printStatus: r.print_status ?? undefined,
   ticketTemplateVersion: r.ticket_template_version ?? undefined,
+  invoiceType: r.invoice_type ?? undefined,
+  series: r.series ?? undefined,
+  fiscalNumber: r.fiscal_number ?? undefined,
+  fiscalMode: r.fiscal_mode ?? undefined,
+  previousFiscalHash: r.previous_fiscal_hash ?? null,
+  fiscalHash: r.fiscal_hash ?? undefined,
   items: (r.sale_items ?? []).map((i: any) => ({
     id: i.id,
     productId: i.product_id,
@@ -212,7 +218,20 @@ export class SupabaseRepository implements Repository {
     return guard(data, error).map(toUser);
   }
   async saveUser(user: User): Promise<User> {
-    const row = { id: user.id, username: user.username, full_name: user.fullName, role: user.role, active: user.active };
+    let id = user.id;
+    if (!id) {
+      const password = user.pin?.trim();
+      if (!password || password.length < 6) throw new Error('Indica una contraseña de al menos 6 caracteres');
+      const { data: auth, error: authError } = await this.sb.auth.signUp({
+        email: user.username,
+        password,
+        options: { data: { full_name: user.fullName, role: user.role } },
+      });
+      if (authError) throw new Error(authError.message);
+      id = auth.user?.id ?? '';
+      if (!id) throw new Error('No se pudo crear el usuario de autenticación');
+    }
+    const row = { id, username: user.username, full_name: user.fullName, role: user.role, active: user.active };
     const { data, error } = await this.sb.from('profiles').upsert(row).select().single();
     return toUser(guard(data, error));
   }
@@ -397,6 +416,11 @@ export class SupabaseRepository implements Repository {
       returnPolicy: data.return_policy ?? '',
       legalText: data.legal_text ?? '',
       logoUrl: data.logo_url ?? undefined,
+      fiscalMode: data.fiscal_mode ?? 'no_verifactu',
+      simplifiedInvoiceSeries: data.simplified_invoice_series ?? 'FS',
+      completeInvoiceSeries: data.complete_invoice_series ?? 'FC',
+      defaultInvoiceType: data.default_invoice_type ?? 'simplified',
+      enableFiscalQr: data.enable_fiscal_qr ?? true,
     };
   }
   async saveSettings(s: Settings): Promise<Settings> {
@@ -417,6 +441,11 @@ export class SupabaseRepository implements Repository {
       return_policy: s.returnPolicy,
       legal_text: s.legalText,
       logo_url: s.logoUrl ?? null,
+      fiscal_mode: s.fiscalMode,
+      simplified_invoice_series: s.simplifiedInvoiceSeries,
+      complete_invoice_series: s.completeInvoiceSeries,
+      default_invoice_type: s.defaultInvoiceType,
+      enable_fiscal_qr: s.enableFiscalQr,
     };
     const { error } = await this.sb.from('settings').upsert(row);
     if (error) throw new Error(error.message);

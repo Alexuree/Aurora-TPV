@@ -106,4 +106,9 @@ export const seedSettings: Settings = {
   returnPolicy: '',
   legalText: 'IVA incluido en los precios. Conserve este ticket.',
   logoUrl: undefined,
+  fiscalMode: 'no_verifactu',
+  simplifiedInvoiceSeries: 'FS',
+  completeInvoiceSeries: 'FC',
+  defaultInvoiceType: 'simplified',
+  enableFiscalQr: true,
 };

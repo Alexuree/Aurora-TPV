@@ -4,14 +4,15 @@
 // =====================================================================
 
 import { useMemo, useState } from 'react';
-import { Download, Euro, Package, Receipt, TrendingUp } from 'lucide-react';
-import { useCategories, useProducts, useSales } from '@/hooks/data';
-import type { Sale } from '@/domain/types';
+import { Download, Euro, Package, Printer, Receipt, TrendingUp } from 'lucide-react';
+import { useCategories, useProducts, useSales, useSettings } from '@/hooks/data';
+import type { PaymentMethod, Sale, Settings } from '@/domain/types';
 import { formatMoney, round2 } from '@/domain/money';
 import { summarizeSales } from '@/domain/sales';
-import { daysAgo, formatTime, startOfToday } from '@/lib/format';
+import { daysAgo, formatDateTime, formatTime, startOfToday } from '@/lib/format';
 import { PAYMENT_LABELS } from '@/domain/payments';
 import { PageHeader, cn } from '@/components/ui';
+import { getPrinterService } from '@/lib/printing';
 
 type Range = 'today' | 'yesterday' | 'week' | 'month' | 'all';
 
@@ -19,6 +20,7 @@ export function ReportsPage() {
   const [range, setRange] = useState<Range>('today');
   const { data: products = [] } = useProducts();
   const { data: categories = [] } = useCategories();
+  const { data: settings } = useSettings();
   const filter =
     range === 'today' ? { from: startOfToday() }
     : range === 'yesterday' ? { from: daysAgo(1), to: startOfToday() }
@@ -96,9 +98,14 @@ export function ReportsPage() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader title="Informes" subtitle="Resumen de actividad de la tienda." actions={
-        <button onClick={() => exportSalesCsv(valid)} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-          <Download size={16} /> Exportar CSV
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => void getPrinterService().print()} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <Printer size={16} /> Imprimir informe
+          </button>
+          <button onClick={() => exportSalesCsv(valid)} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <Download size={16} /> Exportar CSV
+          </button>
+        </div>
       } />
 
       <div className="border-b border-slate-200 bg-white px-6 py-3">
@@ -176,8 +183,65 @@ export function ReportsPage() {
           </Card>
         </div>
       </div>
+      {settings && <DailyReportPrint settings={settings} range={range} sales={sales} />}
     </div>
   );
+}
+
+function DailyReportPrint({ settings, range, sales }: { settings: Settings; range: Range; sales: Sale[] }) {
+  const valid = sales.filter((s) => s.status !== 'cancelled');
+  const summary = summarizeSales(sales);
+  const byPayment = valid.reduce<Record<PaymentMethod, number>>((acc, sale) => {
+    for (const payment of sale.payments) {
+      const method = payment.method === 'cash' ? 'cash' : 'card';
+      acc[method] = round2(acc[method] + payment.amount);
+    }
+    return acc;
+  }, { cash: 0, card: 0 });
+
+  return (
+    <div id="print-area" className="fixed -left-[9999px] top-0 w-[300px] bg-white p-3 font-mono text-[12px] text-black">
+      <p className="text-center text-base font-bold">INFORME DIARIO</p>
+      <p className="text-center">{settings.storeName}</p>
+      <p className="text-center">{settings.legalName} · {settings.taxId}</p>
+      <p className="text-center">Periodo: {rangeLabel(range)}</p>
+      <p className="text-center">Emitido: {formatDateTime(new Date().toISOString())}</p>
+      <PrintDivider />
+      <PrintRow k="Ventas brutas" v={formatMoney(summary.gross)} />
+      <PrintRow k="Anulado" v={`-${formatMoney(summary.cancelled)}`} />
+      <PrintRow k="Ventas netas" v={formatMoney(summary.net)} />
+      <PrintRow k="Tickets válidos" v={String(summary.ticketCount)} />
+      <PrintRow k="Tickets anulados" v={String(summary.cancelledCount)} />
+      <PrintRow k="Ticket medio" v={formatMoney(summary.avgTicket)} />
+      <PrintDivider />
+      <PrintRow k="Efectivo cobrado" v={formatMoney(byPayment.cash)} />
+      <PrintRow k="Tarjeta cobrada" v={formatMoney(byPayment.card)} />
+      <PrintDivider />
+      <p className="mb-1 font-bold">VENTAS</p>
+      {[...sales].sort((a, b) => a.number - b.number).map((sale) => (
+        <div key={sale.id} className="mb-1">
+          <div className="flex justify-between gap-2">
+            <span>#{sale.fiscalNumber || sale.number} {sale.status === 'cancelled' ? 'ANULADO' : ''}</span>
+            <span>{formatMoney(sale.total)}</span>
+          </div>
+          <p className="text-[10px]">{formatDateTime(sale.createdAt)} · {sale.cashierName} · {sale.payments.map((p) => `${PAYMENT_LABELS[p.method] ?? 'Tarjeta'} ${formatMoney(p.amount)}`).join(' + ')}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function rangeLabel(range: Range): string {
+  const labels: Record<Range, string> = { today: 'Hoy', yesterday: 'Ayer', week: '7 días', month: '30 días', all: 'Todo' };
+  return labels[range];
+}
+
+function PrintDivider() {
+  return <div className="my-2 border-t border-dashed border-black" />;
+}
+
+function PrintRow({ k, v }: { k: string; v: string }) {
+  return <div className="flex justify-between"><span>{k}</span><span>{v}</span></div>;
 }
 
 function Mini({ label, value, tone }: { label: string; value: string; tone?: 'rose' | 'brand' }) {
@@ -206,11 +270,14 @@ function Empty() {
 }
 
 function exportSalesCsv(sales: Sale[]) {
-  const rows = [['Ticket', 'Fecha', 'Cliente', 'Cajero', 'Base', 'IVA', 'Total', 'Estado']];
+  const rows = [['Serie/Número fiscal', 'Ticket interno', 'Fecha', 'Cliente', 'Cajero', 'Base', 'IVA', 'Total', 'Pago', 'Estado', 'Modo fiscal', 'Hash', 'Hash anterior']];
   for (const s of sales) {
     rows.push([
+      s.fiscalNumber || `${s.series || ''}-${s.number}`,
       String(s.number), s.createdAt, s.customerName, s.cashierName,
-      String(s.subtotal), String(s.taxTotal), String(s.total), s.status,
+      String(s.subtotal), String(s.taxTotal), String(s.total),
+      s.payments.map((p) => `${p.method}:${p.amount}`).join('|'),
+      s.status, s.fiscalMode ?? '', s.fiscalHash ?? '', s.previousFiscalHash ?? '',
     ]);
   }
   const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');

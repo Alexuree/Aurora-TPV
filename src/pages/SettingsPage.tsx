@@ -1,12 +1,13 @@
 // Configuración de la tienda y de la PLANTILLA DE TICKET, con vista previa.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Save, Upload, X } from 'lucide-react';
-import type { Sale, Settings, TicketWidth } from '@/domain/types';
+import { Download, Save, Upload, X } from 'lucide-react';
+import type { FiscalMode, InvoiceType, Sale, Settings, TicketWidth } from '@/domain/types';
 import { useSaveSettings, useSettings } from '@/hooks/data';
 import { dataMode } from '@/config/env';
 import { Button, Field, PageHeader, inputClass } from '@/components/ui';
 import { Receipt } from '@/components/pos/Receipt';
+import { FISCAL_MODE_LABELS, INVOICE_TYPE_LABELS } from '@/domain/fiscal';
 
 const sampleSale: Sale = {
   id: 'preview',
@@ -29,6 +30,12 @@ const sampleSale: Sale = {
   total: 123.8,
   cashGiven: 130,
   changeGiven: 6.2,
+  invoiceType: 'simplified',
+  series: 'FS',
+  fiscalNumber: 'FS-1042',
+  fiscalMode: 'no_verifactu',
+  previousFiscalHash: null,
+  fiscalHash: 'demo-hash-preview',
 };
 
 export function SettingsPage() {
@@ -58,9 +65,12 @@ export function SettingsPage() {
   return (
     <div className="flex h-full flex-col">
       <PageHeader title="Ajustes" subtitle="Datos de la tienda y plantilla del ticket." actions={
-        <Button onClick={async () => { await save.mutateAsync(form); setSaved(true); setTimeout(() => setSaved(false), 2000); }} disabled={save.isPending}>
-          <Save size={18} /> {saved ? 'Guardado ✓' : 'Guardar'}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={downloadLocalBackup}><Download size={18} /> Backup</Button>
+          <Button onClick={async () => { await save.mutateAsync(form); setSaved(true); setTimeout(() => setSaved(false), 2000); }} disabled={save.isPending}>
+            <Save size={18} /> {saved ? 'Guardado ✓' : 'Guardar'}
+          </Button>
+        </div>
       } />
 
       <div className="flex-1 overflow-y-auto p-6">
@@ -118,6 +128,30 @@ export function SettingsPage() {
               </div>
             </section>
 
+            <section className="rounded-2xl border border-slate-200 bg-white p-5">
+              <h3 className="mb-4 font-bold text-slate-800">Fiscalidad</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Modo fiscal">
+                  <select className={inputClass} value={form.fiscalMode} onChange={(e) => set('fiscalMode', e.target.value as FiscalMode)}>
+                    {(Object.keys(FISCAL_MODE_LABELS) as FiscalMode[]).map((mode) => <option key={mode} value={mode}>{FISCAL_MODE_LABELS[mode]}</option>)}
+                  </select>
+                </Field>
+                <Field label="Tipo por defecto">
+                  <select className={inputClass} value={form.defaultInvoiceType} onChange={(e) => set('defaultInvoiceType', e.target.value as InvoiceType)}>
+                    {(Object.keys(INVOICE_TYPE_LABELS) as InvoiceType[]).map((type) => <option key={type} value={type}>{INVOICE_TYPE_LABELS[type]}</option>)}
+                  </select>
+                </Field>
+                <Field label="Serie factura simplificada"><input className={inputClass} value={form.simplifiedInvoiceSeries} onChange={(e) => set('simplifiedInvoiceSeries', e.target.value.toUpperCase())} /></Field>
+                <Field label="Serie factura completa"><input className={inputClass} value={form.completeInvoiceSeries} onChange={(e) => set('completeInvoiceSeries', e.target.value.toUpperCase())} /></Field>
+                <label className="col-span-2 flex items-center gap-2 text-sm font-medium text-slate-600">
+                  <input type="checkbox" checked={form.enableFiscalQr} onChange={(e) => set('enableFiscalQr', e.target.checked)} className="h-4 w-4" /> Imprimir QR fiscal en tickets/facturas
+                </label>
+                <p className="col-span-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  Actualmente se trabaja en modo NO-VERIFACTU. El modo VERI*FACTU queda preparado para activarse cuando sea obligatorio.
+                </p>
+              </div>
+            </section>
+
             <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-500">
               Modo de datos actual: <span className="font-semibold text-slate-700">{dataMode === 'supabase' ? 'Supabase (nube)' : 'Local (este equipo)'}</span>.
             </div>
@@ -136,4 +170,19 @@ export function SettingsPage() {
       </div>
     </div>
   );
+}
+
+function downloadLocalBackup() {
+  const data: Record<string, string> = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('aurora-tpv')) data[key] = localStorage.getItem(key) ?? '';
+  }
+  const blob = new Blob([JSON.stringify({ createdAt: new Date().toISOString(), data }, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `aurora_tpv_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
