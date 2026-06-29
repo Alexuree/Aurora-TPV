@@ -10,6 +10,7 @@ import type {
   Category,
   Customer,
   Sale,
+  SaleCancellation,
   SaleItem,
   SaleReturn,
   Settings,
@@ -22,6 +23,7 @@ import { uid } from '@/lib/uid';
 import { seedCategories, seedProducts, seedSettings, seedUsers } from '@/data/seed';
 import type {
   AdjustStockInput,
+  CancelSaleInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
@@ -40,6 +42,7 @@ const K = {
   customers: `${NS}:customers`,
   sales: `${NS}:sales`,
   returns: `${NS}:returns`,
+  cancellations: `${NS}:cancellations`,
   cashSessions: `${NS}:cashSessions`,
   cashMovements: `${NS}:cashMovements`,
   stockMovements: `${NS}:stockMovements`,
@@ -88,6 +91,7 @@ export class LocalRepository implements Repository {
     write(K.customers, []);
     write(K.sales, []);
     write(K.returns, []);
+    write(K.cancellations, []);
     write(K.cashSessions, []);
     write(K.cashMovements, []);
     write(K.stockMovements, []);
@@ -293,6 +297,78 @@ export class LocalRepository implements Repository {
     return ok(undefined);
   }
 
+  /* ------------------------- Cancellations ------------------------ */
+  async cancelSale(input: CancelSaleInput): Promise<SaleCancellation> {
+    const sales = read<Sale[]>(K.sales, []);
+    const sale = sales.find((s) => s.id === input.saleId);
+    if (!sale) throw new Error('Venta no encontrada');
+    if (sale.status === 'cancelled') throw new Error('El ticket ya está anulado');
+
+    // No anular si pertenece a un cierre de caja ya cerrado.
+    if (sale.cashSessionId) {
+      const session = read<CashSession[]>(K.cashSessions, []).find((s) => s.id === sale.cashSessionId);
+      if (session && session.status === 'closed') {
+        throw new Error('El ticket está incluido en un cierre de caja cerrado y no puede anularse');
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // Reintegro de stock (opcional)
+    if (input.restock) {
+      const products = read<Product[]>(K.products, []);
+      const stockMoves = read<StockMovement[]>(K.stockMovements, []);
+      for (const item of sale.items) {
+        const prod = products.find((p) => p.id === item.productId);
+        if (prod && prod.trackStock) {
+          const remaining = round2(item.quantity - item.returnedQty);
+          if (remaining > 0) {
+            prod.stock = round2(prod.stock + remaining);
+            prod.updatedAt = now;
+            stockMoves.push({
+              id: uid(),
+              createdAt: now,
+              productId: prod.id,
+              productName: prod.name,
+              type: 'return',
+              quantity: remaining,
+              resultingStock: prod.stock,
+              reference: `Anulación #${sale.number}`,
+              userId: input.userId,
+            });
+          }
+        }
+      }
+      write(K.products, products);
+      write(K.stockMovements, stockMoves);
+    }
+
+    sale.status = 'cancelled';
+    write(K.sales, sales);
+
+    const cancellation: SaleCancellation = {
+      id: uid(),
+      saleId: sale.id,
+      saleNumber: sale.number,
+      createdAt: now,
+      cancelledById: input.userId,
+      cancelledByName: input.userName,
+      reason: input.reason,
+      originalTotal: sale.total,
+      paymentMethods: [...new Set(sale.payments.map((p) => p.method))],
+      cashSessionId: sale.cashSessionId,
+      restock: input.restock,
+    };
+    const list = read<SaleCancellation[]>(K.cancellations, []);
+    list.unshift(cancellation);
+    write(K.cancellations, list);
+    return ok(cancellation);
+  }
+
+  async listCancellations(): Promise<SaleCancellation[]> {
+    return ok(read<SaleCancellation[]>(K.cancellations, []));
+  }
+
   /* --------------------------- Returns ---------------------------- */
   async processReturn(input: ProcessReturnInput): Promise<SaleReturn> {
     const sales = read<Sale[]>(K.sales, []);
@@ -401,7 +477,10 @@ export class LocalRepository implements Repository {
 
   /** Efectivo esperado = fondo + ventas efectivo + entradas - salidas - devoluciones efectivo. */
   private computeExpectedCash(session: CashSession): number {
-    const sales = read<Sale[]>(K.sales, []).filter((s) => s.cashSessionId === session.id);
+    // Excluye las ventas anuladas: su efectivo no está en el cajón.
+    const sales = read<Sale[]>(K.sales, []).filter(
+      (s) => s.cashSessionId === session.id && s.status !== 'cancelled',
+    );
     const cashSales = sales.reduce(
       (acc, s) => acc + s.payments.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0),
       0,

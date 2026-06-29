@@ -206,6 +206,23 @@ export interface SaleReturn {
   restock: boolean;
 }
 
+/* --------------------------- Anulaciones --------------------------- */
+
+/** Registro de anulación de un ticket (no se borra el ticket original). */
+export interface SaleCancellation {
+  id: UUID;
+  saleId: UUID;
+  saleNumber: number;
+  createdAt: ISODate;
+  cancelledById: UUID;
+  cancelledByName: string;
+  reason: string;
+  originalTotal: number;
+  paymentMethods: PaymentMethod[];
+  cashSessionId: UUID | null;
+  restock: boolean;
+}
+
 /* ------------------------------ Caja ------------------------------- */
 
 export type CashSessionStatus = 'open' | 'closed';
