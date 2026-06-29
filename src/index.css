@@ -1,0 +1,114 @@
+@import 'tailwindcss';
+
+/* ====================================================================
+   Aurora TPV — Theme tokens (Tailwind v4 CSS-first config)
+   Paleta sobria y profesional: pizarra (slate) + acento aurora.
+   ==================================================================== */
+@theme {
+  --color-brand-50: #eef9f7;
+  --color-brand-100: #d3f0ec;
+  --color-brand-200: #a7e1da;
+  --color-brand-300: #6fccc2;
+  --color-brand-400: #38b2a6;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  --color-brand-900: #134e4a;
+
+  --color-aurora-from: #14b8a6;
+  --color-aurora-mid: #6366f1;
+  --color-aurora-to: #d946ef;
+
+  --font-sans: 'Segoe UI', system-ui, -apple-system, 'Inter', sans-serif;
+
+  --radius-xl: 0.9rem;
+  --radius-2xl: 1.1rem;
+}
+
+/* Base */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: #f1f5f9; /* slate-100 */
+  color: #0f172a; /* slate-900 */
+  -webkit-font-smoothing: antialiased;
+  /* Evita selección accidental de texto en uso táctil rápido */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Scrollbars discretos */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+/* Utilidad: degradado aurora reutilizable */
+.bg-aurora {
+  background-image: linear-gradient(
+    135deg,
+    var(--color-aurora-from) 0%,
+    var(--color-aurora-mid) 55%,
+    var(--color-aurora-to) 100%
+  );
+}
+.text-aurora {
+  background-image: linear-gradient(
+    135deg,
+    var(--color-aurora-from) 0%,
+    var(--color-aurora-mid) 55%,
+    var(--color-aurora-to) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Animación sutil de entrada para modales */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-pop-in {
+  animation: pop-in 0.14s ease-out;
+}
+
+/* Impresión de tickets */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-area,
+  #print-area * {
+    visibility: visible;
+  }
+  #print-area {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

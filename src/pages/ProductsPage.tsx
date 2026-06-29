@@ -1,0 +1,164 @@
+// =====================================================================
+// Panel de administración de productos (alta, edición, baja).
+// Preparado para escalar a muchos productos: búsqueda y filtros.
+// =====================================================================
+
+import { useMemo, useState } from 'react';
+import { Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import type { IvaRate, Product } from '@/domain/types';
+import { useCategories, useDeleteProduct, useProducts, useSaveProduct } from '@/hooks/data';
+import { formatMoney } from '@/domain/money';
+import { Badge, Button, Field, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
+
+const empty: Product = {
+  id: '', name: '', brand: '', sku: '', barcode: '', categoryId: null,
+  price: 0, cost: 0, ivaRate: 21, taxIncluded: true, stock: 0, trackStock: true,
+  lowStockThreshold: 3, active: true,
+};
+
+export function ProductsPage() {
+  const { data: products = [], isLoading } = useProducts();
+  const { data: categories = [] } = useCategories();
+  const save = useSaveProduct();
+  const del = useDeleteProduct();
+  const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState<Product | null>(null);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return products.filter(
+      (p) => p.name.toLowerCase().includes(q) || (p.brand ?? '').toLowerCase().includes(q) || (p.barcode ?? '').includes(q) || (p.sku ?? '').toLowerCase().includes(q),
+    );
+  }, [products, search]);
+
+  const catName = (id: string | null) => categories.find((c) => c.id === id)?.name ?? '—';
+
+  return (
+    <div className="flex h-full flex-col">
+      <PageHeader
+        title="Productos"
+        subtitle={`${products.length} productos en catálogo`}
+        actions={<Button onClick={() => setEditing(empty)}><Plus size={18} /> Nuevo producto</Button>}
+      />
+
+      <div className="border-b border-slate-200 bg-white px-6 py-3">
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
+          <input placeholder="Buscar por nombre, marca, código…" value={search} onChange={(e) => setSearch(e.target.value)} className={`${inputClass} h-9 pl-10`} />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        {isLoading ? (
+          <div className="flex justify-center py-20"><Spinner className="h-8 w-8" /></div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Producto</th>
+                  <th className="px-4 py-3">Categoría</th>
+                  <th className="px-4 py-3">Código</th>
+                  <th className="px-4 py-3 text-right">PVP</th>
+                  <th className="px-4 py-3 text-center">Stock</th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((p) => {
+                  const low = p.trackStock && p.stock <= p.lowStockThreshold;
+                  return (
+                    <tr key={p.id} className={cn('hover:bg-slate-50', !p.active && 'opacity-50')}>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-800">{p.name}</div>
+                        {p.brand && <div className="text-xs text-brand-600">{p.brand}</div>}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">{catName(p.categoryId)}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{p.barcode || p.sku || '—'}</td>
+                      <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800">{formatMoney(p.price)}</td>
+                      <td className="px-4 py-3 text-center">
+                        {p.trackStock ? (
+                          <Badge color={p.stock <= 0 ? 'red' : low ? 'amber' : 'slate'}>{p.stock} ud</Badge>
+                        ) : (
+                          <Badge color="blue">Servicio</Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          <button onClick={() => setEditing(p)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Pencil size={16} /></button>
+                          <button onClick={() => { if (confirm(`¿Dar de baja "${p.name}"?`)) del.mutate(p.id); }} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={16} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {filtered.length === 0 && <p className="py-12 text-center text-slate-400">Sin resultados.</p>}
+          </div>
+        )}
+      </div>
+
+      {editing && (
+        <ProductFormModal
+          product={editing}
+          categories={categories}
+          saving={save.isPending}
+          onClose={() => setEditing(null)}
+          onSave={async (p) => { await save.mutateAsync(p); setEditing(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProductFormModal({ product, categories, onClose, onSave, saving }: {
+  product: Product;
+  categories: { id: string; name: string }[];
+  onClose: () => void;
+  onSave: (p: Product) => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState<Product>(product);
+  const set = <K extends keyof Product>(k: K, v: Product[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const isNew = !product.id;
+
+  return (
+    <Modal open onClose={onClose} size="lg" title={isNew ? 'Nuevo producto' : 'Editar producto'} footer={
+      <>
+        <Button variant="outline" onClick={onClose}>Cancelar</Button>
+        <Button disabled={!form.name.trim() || saving} onClick={() => onSave(form)}>{saving ? 'Guardando…' : 'Guardar'}</Button>
+      </>
+    }>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="col-span-2"><Field label="Nombre *"><input className={inputClass} value={form.name} onChange={(e) => set('name', e.target.value)} /></Field></div>
+        <Field label="Marca"><input className={inputClass} value={form.brand ?? ''} onChange={(e) => set('brand', e.target.value)} /></Field>
+        <Field label="Categoría">
+          <select className={inputClass} value={form.categoryId ?? ''} onChange={(e) => set('categoryId', e.target.value || null)}>
+            <option value="">— Sin categoría —</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Código de barras"><input className={inputClass} value={form.barcode ?? ''} onChange={(e) => set('barcode', e.target.value)} /></Field>
+        <Field label="SKU / Referencia"><input className={inputClass} value={form.sku ?? ''} onChange={(e) => set('sku', e.target.value)} /></Field>
+        <Field label="PVP (€, IVA incl.)"><input type="number" min={0} step="0.01" className={inputClass} value={form.price} onChange={(e) => set('price', parseFloat(e.target.value) || 0)} /></Field>
+        <Field label="Coste (€)"><input type="number" min={0} step="0.01" className={inputClass} value={form.cost ?? 0} onChange={(e) => set('cost', parseFloat(e.target.value) || 0)} /></Field>
+        <Field label="IVA">
+          <select className={inputClass} value={form.ivaRate} onChange={(e) => set('ivaRate', Number(e.target.value) as IvaRate)}>
+            {[21, 10, 4, 0].map((r) => <option key={r} value={r}>{r}%</option>)}
+          </select>
+        </Field>
+        <Field label="Stock actual"><input type="number" step="1" className={inputClass} value={form.stock} disabled={!form.trackStock} onChange={(e) => set('stock', parseFloat(e.target.value) || 0)} /></Field>
+        <Field label="Aviso stock bajo"><input type="number" step="1" className={inputClass} value={form.lowStockThreshold} disabled={!form.trackStock} onChange={(e) => set('lowStockThreshold', parseFloat(e.target.value) || 0)} /></Field>
+        <div className="col-span-2 flex gap-6 pt-1">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            <input type="checkbox" checked={form.trackStock} onChange={(e) => set('trackStock', e.target.checked)} className="h-4 w-4" /> Controlar stock
+          </label>
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+            <input type="checkbox" checked={form.active} onChange={(e) => set('active', e.target.checked)} className="h-4 w-4" /> Activo
+          </label>
+        </div>
+      </div>
+    </Modal>
+  );
+}
