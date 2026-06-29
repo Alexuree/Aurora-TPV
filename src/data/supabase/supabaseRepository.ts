@@ -241,16 +241,16 @@ export class SupabaseRepository implements Repository {
   }
 
   async listCategories(): Promise<Category[]> {
-    const { data, error } = await this.sb.from('categories').select('*').order('sort_order');
+    const { data, error } = await this.sb.from('categories').select('*').eq('active', true).order('sort_order');
     return guard(data, error).map(toCategory);
   }
   async saveCategory(cat: Category): Promise<Category> {
-    const row = { id: cat.id || undefined, name: cat.name, color: cat.color ?? null, sort_order: cat.sortOrder, active: cat.active };
+    const row = { id: cat.id || undefined, name: cat.name, color: cat.color ?? null, sort_order: cat.sortOrder, active: cat.active !== false };
     const { data, error } = await this.sb.from('categories').upsert(row).select().single();
     return toCategory(guard(data, error));
   }
   async deleteCategory(id: UUID): Promise<void> {
-    const { error } = await this.sb.from('categories').delete().eq('id', id);
+    const { error } = await this.sb.from('categories').update({ active: false }).eq('id', id);
     if (error) throw new Error(error.message);
   }
 

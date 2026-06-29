@@ -5,7 +5,6 @@ import type { IvaRate, Sale, Settings } from '@/domain/types';
 import { formatMoney, round2 } from '@/domain/money';
 import { formatDateTime } from '@/lib/format';
 import { PAYMENT_LABELS } from '@/domain/payments';
-import { FISCAL_MODE_LABELS, INVOICE_TYPE_LABELS, fiscalDisplayNumber, fiscalQrText } from '@/domain/fiscal';
 import { ticketWidthPx } from '@/lib/printing';
 
 function taxRows(sale: Sale): { rate: IvaRate; base: number; tax: number }[] {
@@ -23,7 +22,6 @@ export function Receipt({ sale, settings }: { sale: Sale; settings: Settings }) 
   const width = ticketWidthPx(settings.ticketWidth);
   const small = settings.ticketWidth === '58';
   const cancelled = sale.status === 'cancelled';
-  const qrText = fiscalQrText(sale, settings);
 
   return (
     <div
@@ -53,15 +51,7 @@ export function Receipt({ sale, settings }: { sale: Sale; settings: Settings }) 
 
       <Divider />
       <div className="flex justify-between">
-        <span>{INVOICE_TYPE_LABELS[sale.invoiceType ?? 'simplified']}</span>
-        <span>{fiscalDisplayNumber(sale)}</span>
-      </div>
-      <div className="flex justify-between">
-        <span>Modo fiscal</span>
-        <span>{FISCAL_MODE_LABELS[sale.fiscalMode ?? settings.fiscalMode]}</span>
-      </div>
-      <div className="flex justify-between">
-        <span>Ticket interno #{sale.number}</span>
+        <span>Ticket #{sale.number}</span>
         <span>{formatDateTime(sale.createdAt)}</span>
       </div>
       <div className="flex justify-between">
@@ -124,24 +114,6 @@ export function Receipt({ sale, settings }: { sale: Sale; settings: Settings }) 
         <>
           <Line label="Entregado" value={formatMoney(sale.cashGiven)} />
           <Line label="Cambio" value={formatMoney(sale.changeGiven ?? 0)} />
-        </>
-      )}
-
-      {(settings.enableFiscalQr || sale.fiscalHash) && (
-        <>
-          <Divider />
-          {settings.enableFiscalQr && (
-            <div className="text-center">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(qrText)}`}
-                alt="QR fiscal"
-                className="mx-auto h-24 w-24"
-              />
-              <p className="mt-1 text-[8px] break-all">{qrText}</p>
-            </div>
-          )}
-          {sale.fiscalHash && <p className="mt-1 text-[8px] break-all">Hash: {sale.fiscalHash}</p>}
-          {sale.previousFiscalHash && <p className="mt-1 text-[8px] break-all">Hash ant.: {sale.previousFiscalHash}</p>}
         </>
       )}
 

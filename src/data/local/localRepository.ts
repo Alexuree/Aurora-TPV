@@ -129,11 +129,11 @@ export class LocalRepository implements Repository {
 
   /* --------------------------- Categories ------------------------- */
   async listCategories(): Promise<Category[]> {
-    return ok(read<Category[]>(K.categories, []).sort((a, b) => a.sortOrder - b.sortOrder));
+    return ok(read<Category[]>(K.categories, []).filter((c) => c.active !== false).sort((a, b) => a.sortOrder - b.sortOrder));
   }
   async saveCategory(cat: Category): Promise<Category> {
     const cats = read<Category[]>(K.categories, []);
-    const saved = { ...cat, id: cat.id || uid() };
+    const saved = { ...cat, id: cat.id || uid(), active: cat.active !== false };
     const idx = cats.findIndex((c) => c.id === saved.id);
     if (idx >= 0) cats[idx] = saved;
     else cats.push(saved);
@@ -141,7 +141,12 @@ export class LocalRepository implements Repository {
     return ok(saved);
   }
   async deleteCategory(id: UUID): Promise<void> {
-    write(K.categories, read<Category[]>(K.categories, []).filter((c) => c.id !== id));
+    const cats = read<Category[]>(K.categories, []);
+    const cat = cats.find((c) => c.id === id);
+    if (cat) {
+      cat.active = false;
+      write(K.categories, cats);
+    }
     return ok(undefined);
   }
 

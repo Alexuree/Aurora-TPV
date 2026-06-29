@@ -4,9 +4,9 @@
 // =====================================================================
 
 import { useMemo, useState } from 'react';
-import { History, Pencil, Plus, Search, Trash2 } from 'lucide-react';
-import type { IvaRate, Product } from '@/domain/types';
-import { useCategories, useDeleteProduct, useProductPriceHistory, useProducts, useSaveProduct } from '@/hooks/data';
+import { History, Pencil, Plus, Search, Tags, Trash2 } from 'lucide-react';
+import type { Category, IvaRate, Product } from '@/domain/types';
+import { useCategories, useDeleteCategory, useDeleteProduct, useProductPriceHistory, useProducts, useSaveCategory, useSaveProduct } from '@/hooks/data';
 import { formatMoney } from '@/domain/money';
 import { formatDateTime } from '@/lib/format';
 import { validateProduct } from '@/domain/products';
@@ -17,17 +17,22 @@ const empty: Product = {
   price: 0, cost: 0, ivaRate: 21, taxIncluded: true, active: true,
 };
 
+const emptyCategory: Category = { id: '', name: '', color: '#14b8a6', sortOrder: 0, active: true };
+
 export function ProductsPage() {
   const { data: products = [], isLoading } = useProducts();
   const { data: categories = [] } = useCategories();
   const save = useSaveProduct();
   const del = useDeleteProduct();
+  const saveCategory = useSaveCategory();
+  const deleteCategory = useDeleteCategory();
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Product | null>(null);
+  const [showCategories, setShowCategories] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return products.filter(
+    return products.filter((p) => p.active !== false).filter(
       (p) => p.name.toLowerCase().includes(q) || (p.brand ?? '').toLowerCase().includes(q) || (p.barcode ?? '').includes(q) || (p.sku ?? '').toLowerCase().includes(q),
     );
   }, [products, search]);
@@ -38,8 +43,13 @@ export function ProductsPage() {
     <div className="flex h-full flex-col">
       <PageHeader
         title="Productos"
-        subtitle={`${products.length} productos en catálogo`}
-        actions={<Button onClick={() => setEditing(empty)}><Plus size={18} /> Nuevo producto</Button>}
+        subtitle={`${products.filter((p) => p.active !== false).length} productos en catálogo`}
+        actions={
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setShowCategories(true)}><Tags size={18} /> Categorías</Button>
+            <Button onClick={() => setEditing(empty)}><Plus size={18} /> Nuevo producto</Button>
+          </div>
+        }
       />
 
       <div className="border-b border-slate-200 bg-white px-6 py-3">
@@ -101,7 +111,82 @@ export function ProductsPage() {
           onSave={async (p) => { await save.mutateAsync(p); setEditing(null); }}
         />
       )}
+      {showCategories && (
+        <CategoriesModal
+          categories={categories}
+          saving={saveCategory.isPending}
+          deleting={deleteCategory.isPending}
+          onClose={() => setShowCategories(false)}
+          onSave={(category) => saveCategory.mutateAsync(category)}
+          onDelete={(id) => deleteCategory.mutateAsync(id)}
+        />
+      )}
     </div>
+  );
+}
+
+function CategoriesModal({ categories, saving, deleting, onClose, onSave, onDelete }: {
+  categories: Category[];
+  saving: boolean;
+  deleting: boolean;
+  onClose: () => void;
+  onSave: (category: Category) => Promise<Category>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState<Category>(emptyCategory);
+  const canSave = editing.name.trim().length > 0;
+
+  const save = async () => {
+    if (!canSave) return;
+    await onSave({ ...editing, name: editing.name.trim(), sortOrder: Number(editing.sortOrder) || 0, active: true });
+    setEditing(emptyCategory);
+  };
+
+  return (
+    <Modal open onClose={onClose} size="lg" title="Categorías" footer={<Button variant="outline" onClick={onClose}>Cerrar</Button>}>
+      <div className="grid gap-5 md:grid-cols-[1fr_260px]">
+        <div className="overflow-hidden rounded-2xl border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr><th className="px-4 py-3">Categoría</th><th className="px-4 py-3 text-center">Orden</th><th></th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {categories.map((category) => (
+                <tr key={category.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2 font-medium text-slate-800">
+                      <span className="h-3 w-3 rounded-full" style={{ background: category.color ?? '#94a3b8' }} />
+                      {category.name}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-center text-slate-500">{category.sortOrder}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1">
+                      <button onClick={() => setEditing(category)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Pencil size={16} /></button>
+                      <button disabled={deleting} onClick={() => { if (confirm(`¿Eliminar la categoría "${category.name}"?`)) void onDelete(category.id); }} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={16} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {categories.length === 0 && <p className="py-10 text-center text-slate-400">No hay categorías.</p>}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <h4 className="mb-3 font-bold text-slate-800">{editing.id ? 'Editar categoría' : 'Nueva categoría'}</h4>
+          <div className="space-y-3">
+            <Field label="Nombre *"><input className={inputClass} value={editing.name} onChange={(e) => setEditing((c) => ({ ...c, name: e.target.value }))} /></Field>
+            <Field label="Color"><input type="color" className="h-11 w-full rounded-xl border border-slate-300 bg-white px-2" value={editing.color ?? '#14b8a6'} onChange={(e) => setEditing((c) => ({ ...c, color: e.target.value }))} /></Field>
+            <Field label="Orden"><input type="number" className={inputClass} value={editing.sortOrder} onChange={(e) => setEditing((c) => ({ ...c, sortOrder: Number(e.target.value) || 0 }))} /></Field>
+            <div className="flex gap-2">
+              <Button block disabled={!canSave || saving} onClick={save}>{saving ? 'Guardando…' : 'Guardar'}</Button>
+              {editing.id && <Button variant="outline" onClick={() => setEditing(emptyCategory)}>Nuevo</Button>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
