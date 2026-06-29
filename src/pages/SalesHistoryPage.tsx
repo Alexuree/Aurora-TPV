@@ -1,15 +1,14 @@
 // Historial de ventas con filtros por fecha y búsqueda. Ver/imprimir recibo.
 
 import { useState } from 'react';
-import { Eye, Search } from 'lucide-react';
+import { Eye, Printer, RotateCw, Search } from 'lucide-react';
 import type { Sale, SaleStatus } from '@/domain/types';
-import { useSales, useSettings } from '@/hooks/data';
+import { useSales, useSetSalePrintStatus, useSettings } from '@/hooks/data';
 import { formatMoney } from '@/domain/money';
 import { formatDateTime, daysAgo, startOfToday } from '@/lib/format';
-import { Badge, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
+import { getPrinterService } from '@/lib/printing';
+import { Badge, Button, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
 import { Receipt } from '@/components/pos/Receipt';
-import { Button } from '@/components/ui';
-import { Printer } from 'lucide-react';
 
 const STATUS: Record<SaleStatus, { label: string; color: string }> = {
   completed: { label: 'Completada', color: 'green' },
@@ -25,15 +24,32 @@ export function SalesHistoryPage() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Sale | null>(null);
   const { data: settings } = useSettings();
+  const setPrintStatus = useSetSalePrintStatus();
 
   const filter = range === 'today' ? { from: startOfToday() } : range === 'week' ? { from: daysAgo(7) } : {};
   const { data: sales = [], isLoading } = useSales({ ...filter, search: search || undefined });
 
   const total = sales.filter((s) => s.status !== 'cancelled').reduce((a, s) => a + s.total, 0);
+  const lastSale = sales.find((s) => s.status !== 'cancelled') ?? null;
+
+  const printTicket = async (s: Sale) => {
+    const res = await getPrinterService().print();
+    setPrintStatus.mutate({ id: s.id, status: res.ok ? 'printed' : 'failed' });
+  };
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="Ventas" subtitle={`${sales.length} tickets · ${formatMoney(total)}`} />
+      <PageHeader
+        title="Ventas"
+        subtitle={`${sales.length} tickets · ${formatMoney(total)}`}
+        actions={
+          lastSale ? (
+            <Button variant="outline" onClick={() => setSelected(lastSale)}>
+              <RotateCw size={16} /> Reimprimir último
+            </Button>
+          ) : undefined
+        }
+      />
 
       <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
@@ -78,7 +94,7 @@ export function SalesHistoryPage() {
 
       {selected && settings && (
         <Modal open onClose={() => setSelected(null)} size="sm" title={`Ticket #${selected.number}`} footer={
-          <Button variant="outline" className="no-print w-full" onClick={() => window.print()}><Printer size={18} /> Imprimir</Button>
+          <Button variant="outline" className="no-print w-full" onClick={() => printTicket(selected)}><Printer size={18} /> Imprimir</Button>
         }>
           <div className="rounded-xl border border-slate-200"><Receipt sale={selected} settings={settings} /></div>
         </Modal>

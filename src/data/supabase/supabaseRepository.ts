@@ -119,6 +119,8 @@ const toSale = (r: any): Sale => ({
   cashGiven: r.cash_given != null ? Number(r.cash_given) : undefined,
   changeGiven: r.change_given != null ? Number(r.change_given) : undefined,
   note: r.note ?? undefined,
+  printStatus: r.print_status ?? undefined,
+  ticketTemplateVersion: r.ticket_template_version ?? undefined,
   items: (r.sale_items ?? []).map((i: any) => ({
     id: i.id,
     productId: i.product_id,
@@ -301,6 +303,10 @@ export class SupabaseRepository implements Repository {
     if (error) return null;
     return data ? toSale(data) : null;
   }
+  async setSalePrintStatus(saleId: UUID, status: 'pending' | 'printed' | 'failed'): Promise<void> {
+    const { error } = await this.sb.from('sales').update({ print_status: status }).eq('id', saleId);
+    if (error) throw new Error(error.message);
+  }
 
   async processReturn(input: ProcessReturnInput): Promise<SaleReturn> {
     const { data, error } = await this.sb.rpc('process_return', { payload: input });
@@ -381,6 +387,12 @@ export class SupabaseRepository implements Repository {
       ticketFooter: data.ticket_footer,
       currency: data.currency,
       defaultIva: data.default_iva,
+      ticketWidth: (data.ticket_width as Settings['ticketWidth']) ?? '80',
+      showTaxBreakdown: data.show_tax_breakdown ?? true,
+      headerText: data.header_text ?? '',
+      returnPolicy: data.return_policy ?? '',
+      legalText: data.legal_text ?? '',
+      logoUrl: data.logo_url ?? undefined,
     };
   }
   async saveSettings(s: Settings): Promise<Settings> {
@@ -395,6 +407,12 @@ export class SupabaseRepository implements Repository {
       ticket_footer: s.ticketFooter,
       currency: s.currency,
       default_iva: s.defaultIva,
+      ticket_width: s.ticketWidth,
+      show_tax_breakdown: s.showTaxBreakdown,
+      header_text: s.headerText,
+      return_policy: s.returnPolicy,
+      legal_text: s.legalText,
+      logo_url: s.logoUrl ?? null,
     };
     const { error } = await this.sb.from('settings').upsert(row);
     if (error) throw new Error(error.message);

@@ -132,6 +132,7 @@ export interface Repository {
   processSale(input: ProcessSaleInput): Promise<Sale>;
   listSales(filter?: SalesFilter): Promise<Sale[]>;
   getSale(id: UUID): Promise<Sale | null>;
+  setSalePrintStatus(saleId: UUID, status: 'pending' | 'printed' | 'failed'): Promise<void>;
 
   // Devoluciones
   processReturn(input: ProcessReturnInput): Promise<SaleReturn>;

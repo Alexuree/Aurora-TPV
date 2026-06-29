@@ -253,6 +253,8 @@ export class LocalRepository implements Repository {
       cashGiven: input.cashGiven,
       changeGiven: input.changeGiven,
       note: input.note,
+      printStatus: 'pending',
+      ticketTemplateVersion: 1,
     };
     const sales = read<Sale[]>(K.sales, []);
     sales.unshift(sale);
@@ -279,6 +281,16 @@ export class LocalRepository implements Repository {
 
   async getSale(id: UUID): Promise<Sale | null> {
     return ok(read<Sale[]>(K.sales, []).find((s) => s.id === id) ?? null);
+  }
+
+  async setSalePrintStatus(saleId: UUID, status: 'pending' | 'printed' | 'failed'): Promise<void> {
+    const sales = read<Sale[]>(K.sales, []);
+    const sale = sales.find((s) => s.id === saleId);
+    if (sale) {
+      sale.printStatus = status;
+      write(K.sales, sales);
+    }
+    return ok(undefined);
   }
 
   /* --------------------------- Returns ---------------------------- */
@@ -465,7 +477,9 @@ export class LocalRepository implements Repository {
 
   /* --------------------------- Settings --------------------------- */
   async getSettings(): Promise<Settings> {
-    return ok(read<Settings>(K.settings, seedSettings));
+    // Mezcla con los valores por defecto para que ajustes guardados antes de
+    // añadir nuevos campos (p. ej. plantilla de ticket) no queden incompletos.
+    return ok({ ...seedSettings, ...read<Partial<Settings>>(K.settings, {}) });
   }
   async saveSettings(s: Settings): Promise<Settings> {
     write(K.settings, s);
