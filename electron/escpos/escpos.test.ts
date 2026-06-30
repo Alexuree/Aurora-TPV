@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 // El builder ESC/POS es CommonJS (.cjs), compartido con el proceso de Electron.
 import escpos from './escpos.cjs';
 
-const { buildReceiptBytes, drawerKick, cut, padLine, separator, formatEuro, lineWidth, encodeText } = escpos as any;
+const { buildReceiptBytes, drawerKick, cut, padLine, separator, formatEuro, lineWidth, encodeText, codePageCommand } =
+  escpos as any;
 
 const store = { name: 'Aurora', address: 'C/ Mayor 12', phone: '910', footer: 'Gracias' };
 const sale = {
@@ -68,19 +69,52 @@ describe('escpos low-level', () => {
     expect(formatEuro(-5)).toBe('-5,00 €');
   });
 
-  it('encodeText utf8 vs latin1', () => {
+  it('encodeText mapea a CP858 (no latin1)', () => {
     expect(encodeText('A', 'utf8')[0]).toBe(0x41);
-    // 'ñ' en latin1 es 0xF1
-    expect(encodeText('ñ', 'cp858')[0]).toBe(0xf1);
+    // ASCII pasa directo en cp858
+    expect(encodeText('A', 'cp858')[0]).toBe(0x41);
+    // Caracteres del español en su byte real CP858/CP850
+    expect(encodeText('ñ', 'cp858')[0]).toBe(0xa4);
+    expect(encodeText('Ñ', 'cp858')[0]).toBe(0xa5);
+    expect(encodeText('á', 'cp858')[0]).toBe(0xa0);
+    expect(encodeText('é', 'cp858')[0]).toBe(0x82);
+    expect(encodeText('ü', 'cp858')[0]).toBe(0x81);
+    expect(encodeText('¿', 'cp858')[0]).toBe(0xa8);
+    expect(encodeText('·', 'cp858')[0]).toBe(0xfa);
+  });
+
+  it('encodeText: euro 0xD5 en cp858, "EUR" en cp850', () => {
+    expect(encodeText('€', 'cp858')[0]).toBe(0xd5);
+    expect([...encodeText('€', 'cp850')]).toEqual([0x45, 0x55, 0x52]); // EUR
+  });
+
+  it('encodeText degrada comillas/guiones tipográficos a ASCII', () => {
+    expect([...encodeText('“a”', 'cp858')]).toEqual([0x22, 0x61, 0x22]);
+    expect(encodeText('–', 'cp858')[0]).toBe(0x2d); // guion largo → '-'
+    // Carácter desconocido sin equivalente → '?'
+    expect(encodeText('☃', 'cp858')[0]).toBe(0x3f);
+  });
+
+  it('codePageCommand: ESC t 19 (PC858) por defecto, ESC t 2 (PC850)', () => {
+    expect([...codePageCommand('cp858')]).toEqual([0x1b, 0x74, 19]);
+    expect([...codePageCommand('cp850')]).toEqual([0x1b, 0x74, 2]);
+    expect([...codePageCommand('utf8')]).toEqual([]); // utf8 no usa página de códigos
   });
 });
 
 describe('buildReceiptBytes', () => {
-  it('empieza con INIT (ESC @)', () => {
+  it('empieza con INIT (ESC @) y selecciona página de códigos PC858', () => {
     const buf = buildReceiptBytes({ type: 'ORIGINAL', store, sale }, { paperWidth: '80', autoCut: true });
     expect(buf[0]).toBe(0x1b);
     expect(buf[1]).toBe(0x40);
+    // Justo tras el INIT debe ir ESC t 19 (PC858) para € y tildes.
+    expect([buf[2], buf[3], buf[4]]).toEqual([0x1b, 0x74, 19]);
     expect(Buffer.isBuffer(buf)).toBe(true);
+  });
+
+  it('el euro del total se codifica como 0xD5 (PC858)', () => {
+    const buf = buildReceiptBytes({ type: 'ORIGINAL', store, sale }, { paperWidth: '80', autoCut: true });
+    expect(buf.includes(0xd5)).toBe(true);
   });
 
   it('incluye corte cuando autoCut es true', () => {
@@ -105,7 +139,8 @@ describe('buildReceiptBytes', () => {
     const buf = buildReceiptBytes({ type: 'COPY', store, sale }, { paperWidth: '80', autoCut: true });
     const text = buf.toString('latin1');
     expect(text).toContain('COPIA');
-    expect(text).toContain('No válido como justificante fiscal');
+    // 'válido' lleva tilde (byte CP858), así que comprobamos la parte ASCII.
+    expect(text).toContain('justificante fiscal');
   });
 
   it('imprime QR solo si printQr y qrText', () => {

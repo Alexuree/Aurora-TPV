@@ -53,12 +53,81 @@ function lineWidth(paperWidth) {
   return String(paperWidth) === '58' ? 32 : 48;
 }
 
-/** Codifica texto a bytes. cp858/cp850 se aproximan con latin1 (sin iconv). */
+// ---------------------------------------------------------------------
+// Codificación de texto a la página de códigos de la impresora.
+//
+// CLAVE: los bytes 0x80–0xFF de CP858/CP850 NO coinciden con latin1. Hay
+// que mapear cada carácter Unicode a su byte real en la tabla y, además,
+// seleccionar la página de códigos en la impresora con `ESC t n` (si no,
+// la impresora interpreta los bytes con su tabla por defecto, normalmente
+// PC437, y salen €, tildes y ñ como basura).
+//
+// Tabla base = CP850 (multilingüe). CP858 = CP850 con el euro en 0xD5.
+// ---------------------------------------------------------------------
+
+/** Unicode → byte CP850 (parte alta 0x80–0xFF), sin el euro. */
+const CP850 = {
+  // Mayúsculas acentuadas
+  'À': 0xb7, 'Á': 0xb5, 'Â': 0xb6, 'Ã': 0xc7, 'Ä': 0x8e, 'Å': 0x8f, 'Æ': 0x92, 'Ç': 0x80,
+  'È': 0xd4, 'É': 0x90, 'Ê': 0xd2, 'Ë': 0xd3, 'Ì': 0xde, 'Í': 0xd6, 'Î': 0xd7, 'Ï': 0xd8,
+  'Ð': 0xd1, 'Ñ': 0xa5, 'Ò': 0xe3, 'Ó': 0xe0, 'Ô': 0xe2, 'Õ': 0xe5, 'Ö': 0x99, 'Ø': 0x9d,
+  'Ù': 0xeb, 'Ú': 0xe9, 'Û': 0xea, 'Ü': 0x9a, 'Ý': 0xed, 'Þ': 0xe8,
+  // Minúsculas acentuadas
+  'à': 0x85, 'á': 0xa0, 'â': 0x83, 'ã': 0xc6, 'ä': 0x84, 'å': 0x86, 'æ': 0x91, 'ç': 0x87,
+  'è': 0x8a, 'é': 0x82, 'ê': 0x88, 'ë': 0x89, 'ì': 0x8d, 'í': 0xa1, 'î': 0x8c, 'ï': 0x8b,
+  'ð': 0xd0, 'ñ': 0xa4, 'ò': 0x95, 'ó': 0xa2, 'ô': 0x93, 'õ': 0xe4, 'ö': 0x94, 'ø': 0x9b,
+  'ù': 0x97, 'ú': 0xa3, 'û': 0x96, 'ü': 0x81, 'ý': 0xec, 'þ': 0xe7, 'ÿ': 0x98, 'ß': 0xe1,
+  // Signos y puntuación
+  '¡': 0xad, '¿': 0xa8, 'ª': 0xa6, 'º': 0xa7, '«': 0xae, '»': 0xaf, '·': 0xfa, '°': 0xf8,
+  '©': 0xb8, '®': 0xa9, 'µ': 0xe6, '¬': 0xaa, '±': 0xf1, '÷': 0xf6, '×': 0x9e,
+  '¢': 0xbd, '£': 0x9c, '¥': 0xbe, '¤': 0xcf,
+  '½': 0xab, '¼': 0xac, '¾': 0xf3, '§': 0xf5, '¶': 0xf4, '´': 0xef, '¨': 0xf9, '¯': 0xee,
+  '²': 0xfd, '³': 0xfc, '¹': 0xfb, '¦': 0xdd, '¸': 0xf7, ' ': 0xff,
+};
+
+/** CP858 = CP850 + euro en 0xD5 (página recomendada por defecto). */
+const CP858 = { ...CP850, '€': 0xd5 };
+
+/** Sustitutos ASCII para caracteres no representables (comillas, guiones…). */
+const ASCII_FALLBACK = {
+  '‘': "'", '’': "'", '‚': "'", '‛': "'",
+  '“': '"', '”': '"', '„': '"',
+  '–': '-', '—': '-', '―': '-', '−': '-',
+  '…': '...', '•': '*', '™': 'TM', '℠': 'SM',
+  '₧': 'Pts', '€': 'EUR', // € sin página 858 → "EUR"
+};
+
+/** Página de códigos a seleccionar en la impresora (ESC t n). */
+function codePageCommand(encoding) {
+  if (encoding === 'utf8') return Buffer.alloc(0);
+  const n = encoding === 'cp850' ? 2 : 19; // 19 = PC858 (con €), 2 = PC850
+  return Buffer.from([ESC, 0x74, n]);
+}
+
+/**
+ * Codifica texto a bytes en la página de códigos indicada (cp858 por
+ * defecto). ASCII pasa directo; los acentos/€/ñ se mapean a su byte real;
+ * comillas y guiones tipográficos degradan a ASCII; lo desconocido se
+ * normaliza quitando tildes o cae a '?'.
+ */
 function encodeText(text, encoding) {
   const value = text == null ? '' : String(text);
   if (encoding === 'utf8') return Buffer.from(value, 'utf8');
-  // cp858/cp850: latin1 cubre los caracteres habituales del español (á,é,ñ,€≈).
-  return Buffer.from(value, 'latin1');
+  const table = encoding === 'cp850' ? CP850 : CP858;
+  const bytes = [];
+  for (const ch of value) {
+    const code = ch.codePointAt(0);
+    if (code < 0x80) { bytes.push(code); continue; } // ASCII directo
+    const mapped = table[ch];
+    if (mapped != null) { bytes.push(mapped); continue; }
+    const fb = ASCII_FALLBACK[ch];
+    if (fb != null) { for (let i = 0; i < fb.length; i++) bytes.push(fb.charCodeAt(i)); continue; }
+    // Último recurso: quitar diacríticos; si sigue sin ser ASCII → '?'.
+    const stripped = ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const c0 = stripped.charCodeAt(0);
+    bytes.push(stripped && c0 < 0x80 ? c0 : 0x3f);
+  }
+  return Buffer.from(bytes);
 }
 
 /* ----------------------------- Helpers ----------------------------- */
@@ -208,6 +277,9 @@ function buildReceiptBytes(payload, config) {
   const isTest = payload.type === 'TEST';
 
   out(CMD.INIT);
+  // Selecciona la página de códigos en la impresora (ESC t n) para que
+  // interprete bien €, tildes y ñ. Debe ir DESPUÉS del INIT (ESC @ resetea).
+  out(codePageCommand(enc));
 
   // --- Marca de COPIA ---
   if (isCopy) {
@@ -387,6 +459,9 @@ module.exports = {
   CMD,
   lineWidth,
   encodeText,
+  codePageCommand,
+  CP850,
+  CP858,
   formatEuro,
   padLine,
   separator,
