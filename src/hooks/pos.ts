@@ -100,12 +100,12 @@ export function useTestCashDrawer() {
   });
 }
 
-/** Apertura manual del cajón con motivo (queda en cajón + auditoría). */
+/** Apertura manual directa del cajón (queda en cajón + auditoría). */
 export function useOpenCashDrawerManual() {
   const qc = useQueryClient();
   const user = useAuth((s) => s.user);
   return useMutation({
-    mutationFn: async (v: { config: PrinterConfig; sessionId?: string | null; reason: string }) => {
+    mutationFn: async (v: { config: PrinterConfig; sessionId?: string | null; reason?: string }) => {
       const res = isDesktopPrinting() ? await window.pos!.openCashDrawer(v.config) : NO_DESKTOP;
       // El evento + auditoría se registran SIEMPRE (aunque no haya hardware).
       await repo.recordCashDrawerEvent({
@@ -113,7 +113,7 @@ export function useOpenCashDrawerManual() {
         userId: user?.id ?? '',
         username: user?.fullName ?? '',
         type: 'MANUAL_OPEN',
-        reason: v.reason,
+        reason: v.reason ?? 'Apertura manual',
       });
       return res;
     },

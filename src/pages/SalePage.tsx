@@ -26,6 +26,7 @@ import { PaymentModal, type PaymentResult } from '@/components/pos/PaymentModal'
 import { CustomerPickerModal } from '@/components/pos/CustomerPickerModal';
 import { ReceiptModal } from '@/components/pos/ReceiptModal';
 import { PendingProductCard } from '@/components/pos/PendingProductCard';
+import { CashDrawerButton } from '@/components/pos/CashDrawerButton';
 
 export function SalePage() {
   const navigate = useNavigate();
@@ -223,6 +224,7 @@ export function SalePage() {
             />
             <Barcode className="absolute right-3.5 top-3.5 text-slate-300" size={20} />
           </div>
+          <CashDrawerButton sessionId={openSession?.id} />
         </div>
 
         {/* Producto pendiente de escaneo */}
