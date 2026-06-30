@@ -5,6 +5,7 @@
 
 const { app, BrowserWindow, shell, Menu } = require('electron');
 const path = require('path');
+const { registerIpc } = require('./ipc/printerIpc.cjs');
 
 const devUrl = process.env.VITE_DEV_SERVER_URL;
 
@@ -68,6 +69,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  registerIpc(); // handlers de impresión térmica y cajón (pos:*)
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
