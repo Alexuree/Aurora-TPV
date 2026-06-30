@@ -14,6 +14,7 @@ import { Badge, Button, Modal, PageHeader, Spinner, cn, inputClass } from '@/com
 import { Receipt } from '@/components/pos/Receipt';
 import { CancelTicketModal } from '@/components/pos/CancelTicketModal';
 import { CustomerPickerModal } from '@/components/pos/CustomerPickerModal';
+import { repo } from '@/data';
 
 const STATUS: Record<SaleStatus, { label: string; color: string }> = {
   completed: { label: 'Completada', color: 'green' },
@@ -47,13 +48,16 @@ export function SalesHistoryPage() {
   // Reimpresión: en escritorio imprime una COPIA por la térmica (ESC/POS) y
   // registra el PrintJob + auditoría; en navegador usa el diálogo del sistema.
   const printTicket = async (s: Sale) => {
+    const latest = await repo.getSale(s.id).catch(() => null);
+    const saleToPrint = latest ?? s;
+    if (selected?.id === saleToPrint.id && latest) setSelected(saleToPrint);
     if (isDesktopPrinting() && printerConfig && settings) {
-      const res = await reprint.mutateAsync({ sale: s, settings, config: printerConfig });
-      setPrintStatus.mutate({ id: s.id, status: res.ok ? 'printed' : 'failed' });
+      const res = await reprint.mutateAsync({ sale: saleToPrint, settings, config: printerConfig });
+      setPrintStatus.mutate({ id: saleToPrint.id, status: res.ok ? 'printed' : 'failed' });
       return;
     }
     const res = await getPrinterService().print();
-    setPrintStatus.mutate({ id: s.id, status: res.ok ? 'printed' : 'failed' });
+    setPrintStatus.mutate({ id: saleToPrint.id, status: res.ok ? 'printed' : 'failed' });
   };
 
   const assignCustomerToSale = async (customer: Customer | null) => {

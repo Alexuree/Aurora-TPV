@@ -9,7 +9,7 @@
 // =====================================================================
 
 import type { IvaRate, PrinterConfig, Sale, Settings, TicketWidth } from '@/domain/types';
-import type { ReceiptPayload, ReceiptTaxRow } from '@/electron';
+import type { ReceiptCustomerPayload, ReceiptPayload, ReceiptTaxRow } from '@/electron';
 import { round2 } from '@/domain/money';
 import { fiscalQrText } from '@/domain/fiscal';
 
@@ -85,6 +85,26 @@ export function buildTaxBreakdown(sale: Sale): ReceiptTaxRow[] {
   return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([rate, v]) => ({ rate, base: v.base, tax: v.tax }));
 }
 
+function snapshotValue(snapshot: unknown, camelKey: string, snakeKey?: string): string | undefined {
+  if (!snapshot || typeof snapshot !== 'object') return undefined;
+  const record = snapshot as Record<string, unknown>;
+  const value = record[camelKey] ?? (snakeKey ? record[snakeKey] : undefined);
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function receiptCustomer(sale: Sale): ReceiptCustomerPayload | null {
+  const snap = sale.customerSnapshot;
+  const name = snapshotValue(snap, 'name') ?? (sale.customerName !== 'Cliente mostrador' ? sale.customerName : undefined);
+  if (!name) return null;
+  return {
+    name,
+    taxId: snapshotValue(snap, 'taxId', 'tax_id'),
+    address: snapshotValue(snap, 'address'),
+    postalCode: snapshotValue(snap, 'postalCode', 'postal_code'),
+    city: snapshotValue(snap, 'city'),
+  };
+}
+
 /**
  * Construye el payload plano del ticket a partir de la venta y los ajustes.
  * El proceso principal de Electron lo convierte en bytes ESC/POS.
@@ -95,7 +115,7 @@ export function buildReceiptPayload(
   type: 'ORIGINAL' | 'COPY' | 'TEST' = 'ORIGINAL',
 ): ReceiptPayload {
   const qrText = settings.enableFiscalQr && sale.fiscalHash ? fiscalQrText(sale, settings) : null;
-  const snap = sale.customerSnapshot;
+  const customer = receiptCustomer(sale);
   return {
     type,
     store: {
@@ -114,9 +134,7 @@ export function buildReceiptPayload(
       fiscalNumber: sale.fiscalNumber,
       createdAt: sale.createdAt,
       cashierName: sale.cashierName,
-      customer: snap
-        ? { name: snap.name, taxId: snap.taxId, address: snap.address, postalCode: snap.postalCode, city: snap.city }
-        : null,
+      customer,
       items: sale.items.map((it) => ({ quantity: it.quantity, name: it.name, discountPct: it.discountPct, lineTotal: it.lineTotal })),
       taxBreakdown: settings.showTaxBreakdown ? buildTaxBreakdown(sale) : [],
       subtotal: sale.subtotal,
