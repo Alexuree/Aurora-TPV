@@ -54,6 +54,12 @@ export function Receipt({ sale, settings }: { sale: Sale; settings: Settings }) 
         <span>Ticket #{sale.number}</span>
         <span>{formatDateTime(sale.createdAt)}</span>
       </div>
+      {sale.fiscalNumber && (sale.invoiceType === 'complete' || sale.customerSnapshot?.taxId) && (
+        <div className="flex justify-between">
+          <span>Factura</span>
+          <span>{sale.fiscalNumber}</span>
+        </div>
+      )}
       <div className="flex justify-between">
         <span>Atendido por</span>
         <span>{sale.cashierName}</span>

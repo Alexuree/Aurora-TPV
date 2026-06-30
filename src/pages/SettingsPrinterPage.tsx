@@ -31,6 +31,7 @@ export function SettingsPrinterPage() {
   const printers = usePrinters();
   const [form, setForm] = useState<PrinterConfig | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => { if (data && !form) setForm(data); }, [data, form]);
   if (!form) return <div className="p-6 text-slate-400">Cargando…</div>;
@@ -39,9 +40,15 @@ export function SettingsPrinterPage() {
   const usesWindowsPrinter = form.connectionType === 'windows-printer' || form.connectionType === 'usb';
 
   const onSave = async () => {
-    await save.mutateAsync(form);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSaveError(null);
+    try {
+      const savedConfig = await save.mutateAsync(form);
+      setForm(savedConfig);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'No se pudo guardar la configuración de impresora');
+    }
   };
 
   return (
@@ -53,13 +60,18 @@ export function SettingsPrinterPage() {
           <div className="flex gap-2">
             <Link to="/ajustes"><Button variant="outline"><ArrowLeft size={18} /> Ajustes</Button></Link>
             <Button onClick={onSave} disabled={save.isPending}>
-              <Save size={18} /> {saved ? 'Guardado ✓' : 'Guardar'}
+              <Save size={18} /> {save.isPending ? 'Guardando…' : saved ? 'Guardado ✓' : 'Guardar'}
             </Button>
           </div>
         }
       />
 
       <div className="flex-1 overflow-y-auto p-6">
+        {saveError && (
+          <div className="mx-auto mb-4 max-w-5xl rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+            {saveError}
+          </div>
+        )}
         <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1fr_340px]">
           <div className="space-y-6">
             {/* Conexión */}

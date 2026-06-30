@@ -15,7 +15,7 @@ import type {
   ProcessSaleInput,
   SalesFilter,
 } from '@/data/repository';
-import type { Category, Customer, Product, Settings, User } from '@/domain/types';
+import type { Category, Customer, Product, Sale, Settings, User } from '@/domain/types';
 
 export const qk = {
   products: ['products'] as const,
@@ -83,10 +83,15 @@ export function useSetSalePrintStatus() {
 }
 
 export function useAssignSaleCustomer() {
-  const invalidate = useInvalidate();
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: AssignSaleCustomerInput) => repo.assignSaleCustomer(input),
-    onSuccess: () => invalidate([['sales']]),
+    onSuccess: (updated) => {
+      qc.setQueriesData<Sale[]>({ queryKey: ['sales'] }, (old) =>
+        old?.map((sale) => (sale.id === updated.id ? updated : sale)),
+      );
+      qc.invalidateQueries({ queryKey: ['sales'] });
+    },
   });
 }
 
@@ -159,6 +164,12 @@ export function useAddCashMovement() {
 }
 
 export function useSaveSettings() {
-  const invalidate = useInvalidate();
-  return useMutation({ mutationFn: (s: Settings) => repo.saveSettings(s), onSuccess: () => invalidate([qk.settings]) });
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (s: Settings) => repo.saveSettings(s),
+    onSuccess: (settings) => {
+      qc.setQueryData(qk.settings, settings);
+      qc.invalidateQueries({ queryKey: qk.settings });
+    },
+  });
 }

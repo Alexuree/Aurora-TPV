@@ -67,7 +67,10 @@ export function useSavePrinterConfig() {
   const user = useAuth((s) => s.user);
   return useMutation({
     mutationFn: (cfg: PrinterConfig) => repo.savePrinterConfig(cfg, { userId: user?.id, userName: user?.fullName }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: pqk.printerConfig }),
+    onSuccess: (cfg) => {
+      qc.setQueryData(pqk.printerConfig, cfg);
+      qc.invalidateQueries({ queryKey: pqk.printerConfig });
+    },
   });
 }
 

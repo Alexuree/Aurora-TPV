@@ -44,9 +44,10 @@ export function SettingsPage() {
   const save = useSaveSettings();
   const [form, setForm] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
 
-  useEffect(() => { if (data) setForm(data); }, [data]);
+  useEffect(() => { if (data && !form) setForm(data); }, [data, form]);
   const preview = useMemo(() => form, [form]);
 
   if (!form || !preview) return <div className="p-6 text-slate-400">Cargando…</div>;
@@ -63,19 +64,36 @@ export function SettingsPage() {
     reader.readAsDataURL(file);
   };
 
+  const onSave = async () => {
+    setSaveError(null);
+    try {
+      const savedSettings = await save.mutateAsync(form);
+      setForm(savedSettings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'No se pudo guardar la configuración');
+    }
+  };
+
   return (
     <div className="flex h-full flex-col">
       <PageHeader title="Ajustes" subtitle="Datos de la tienda y plantilla del ticket." actions={
         <div className="flex gap-2">
           <Link to="/ajustes/impresora"><Button variant="outline"><Printer size={18} /> Impresora y cajón</Button></Link>
           <Button variant="outline" onClick={downloadLocalBackup}><Download size={18} /> Backup</Button>
-          <Button onClick={async () => { await save.mutateAsync(form); setSaved(true); setTimeout(() => setSaved(false), 2000); }} disabled={save.isPending}>
-            <Save size={18} /> {saved ? 'Guardado ✓' : 'Guardar'}
+          <Button onClick={onSave} disabled={save.isPending}>
+            <Save size={18} /> {save.isPending ? 'Guardando…' : saved ? 'Guardado ✓' : 'Guardar'}
           </Button>
         </div>
       } />
 
       <div className="flex-1 overflow-y-auto p-6">
+        {saveError && (
+          <div className="mx-auto mb-4 max-w-5xl rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+            {saveError}
+          </div>
+        )}
         <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1fr_340px]">
           {/* Formulario */}
           <div className="space-y-6">
