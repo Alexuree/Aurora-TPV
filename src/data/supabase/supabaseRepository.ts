@@ -636,7 +636,14 @@ export class SupabaseRepository implements Repository {
       copies: input.copies ?? 1,
     };
     const { data, error } = await this.sb.from('print_jobs').insert(row).select().single();
-    return toPrintJob(guard(data, error));
+    const job = toPrintJob(guard(data, error));
+    const auditType = input.type === 'COPY' ? 'reprint' : input.status === 'SUCCESS' ? 'print_success' : input.status === 'FAILED' ? 'print_failed' : null;
+    if (auditType) {
+      await this.insertAudit(auditType, { userId: input.printedBy }, 'sale', input.saleId ?? null, {
+        type: input.type, receiptNumber: input.receiptNumber, error: input.errorMessage,
+      });
+    }
+    return job;
   }
 
   async listPrintJobs(saleId?: UUID): Promise<PrintJob[]> {
@@ -657,7 +664,16 @@ export class SupabaseRepository implements Repository {
       related_sale_id: input.relatedSaleId ?? null,
     };
     const { data, error } = await this.sb.from('cash_drawer_events').insert(row).select().single();
-    return toCashDrawerEvent(guard(data, error));
+    const ev = toCashDrawerEvent(guard(data, error));
+    const auditType = input.type === 'MANUAL_OPEN' ? 'drawer_manual_open'
+      : (input.type === 'SALE_CASH' || input.type === 'TEST_OPEN' || input.type === 'REFUND_CASH') ? 'drawer_opened'
+      : null;
+    if (auditType) {
+      await this.insertAudit(auditType, { userId: input.userId, userName: input.username }, 'cash_drawer', input.relatedSaleId ?? input.sessionId ?? null, {
+        drawerEvent: input.type, reason: input.reason, amount: input.amount,
+      });
+    }
+    return ev;
   }
 
   async listCashDrawerEvents(sessionId?: UUID): Promise<CashDrawerEvent[]> {

@@ -86,6 +86,28 @@ function ok<T>(value: T): Promise<T> {
   return Promise.resolve(value);
 }
 
+/** Tipo de evento de auditoría que corresponde a una impresión. */
+function printJobAuditType(input: RecordPrintJobInput): AuditEvent['type'] | null {
+  if (input.type === 'COPY') return 'reprint';
+  if (input.status === 'SUCCESS') return 'print_success';
+  if (input.status === 'FAILED') return 'print_failed';
+  return null;
+}
+
+/** Tipo de evento de auditoría que corresponde a una apertura de cajón. */
+function drawerAuditType(type: RecordCashDrawerEventInput['type']): AuditEvent['type'] | null {
+  switch (type) {
+    case 'MANUAL_OPEN':
+      return 'drawer_manual_open';
+    case 'SALE_CASH':
+    case 'TEST_OPEN':
+    case 'REFUND_CASH':
+      return 'drawer_opened';
+    default:
+      return null; // CASH_IN/CASH_OUT se auditan en addCashMovement
+  }
+}
+
 export class LocalRepository implements Repository {
   readonly mode = 'local' as const;
 
@@ -598,6 +620,13 @@ export class LocalRepository implements Repository {
     const jobs = read<PrintJob[]>(K.printJobs, []);
     jobs.unshift(job);
     write(K.printJobs, jobs.slice(0, 5000));
+    const auditType = printJobAuditType(input);
+    if (auditType) {
+      this.audit(auditType, {
+        userId: input.printedBy, entity: 'sale', entityId: input.saleId ?? undefined,
+        details: { type: input.type, receiptNumber: input.receiptNumber, error: input.errorMessage },
+      });
+    }
     return ok(job);
   }
 
@@ -625,7 +654,16 @@ export class LocalRepository implements Repository {
   }
 
   async recordCashDrawerEvent(input: RecordCashDrawerEventInput): Promise<CashDrawerEvent> {
-    return ok(this.pushDrawerEvent(input));
+    const ev = this.pushDrawerEvent(input);
+    const auditType = drawerAuditType(input.type);
+    if (auditType) {
+      this.audit(auditType, {
+        userId: input.userId, userName: input.username, entity: 'cash_drawer',
+        entityId: input.relatedSaleId ?? input.sessionId ?? undefined,
+        details: { drawerEvent: input.type, reason: input.reason, amount: input.amount },
+      });
+    }
+    return ok(ev);
   }
 
   async listCashDrawerEvents(sessionId?: UUID): Promise<CashDrawerEvent[]> {
