@@ -5,11 +5,14 @@
 // =====================================================================
 
 import type {
+  CashDrawerEvent,
   CashMovement,
   CashSession,
   Category,
   Customer,
   AuditEvent,
+  PrinterConfig,
+  PrintJob,
   Sale,
   SaleCancellation,
   SaleItem,
@@ -20,15 +23,20 @@ import type {
 import { round2 } from '@/domain/money';
 import { fiscalHashPayload, invoiceTypeForSale, seriesForInvoice, sha256Hex } from '@/domain/fiscal';
 import { summarizeSales } from '@/domain/sales';
+import { computeExpectedCash } from '@/domain/cash';
 import { uid } from '@/lib/uid';
-import { seedCategories, seedProducts, seedSettings, seedUsers } from '@/data/seed';
+import { seedCategories, seedPrinterConfig, seedProducts, seedSettings, seedUsers } from '@/data/seed';
 import type {
+  ActorContext,
+  AuditFilter,
   CancelSaleInput,
   AssignSaleCustomerInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
   ProcessSaleInput,
+  RecordCashDrawerEventInput,
+  RecordPrintJobInput,
   Repository,
   SalesFilter,
 } from '@/data/repository';
@@ -45,7 +53,10 @@ const K = {
   cancellations: `${NS}:cancellations`,
   cashSessions: `${NS}:cashSessions`,
   cashMovements: `${NS}:cashMovements`,
+  cashDrawerEvents: `${NS}:cashDrawerEvents`,
   auditEvents: `${NS}:auditEvents`,
+  printerConfig: `${NS}:printerConfig`,
+  printJobs: `${NS}:printJobs`,
   settings: `${NS}:settings`,
   saleSeq: `${NS}:saleSeq`,
   seeded: `${NS}:seeded`,
@@ -93,7 +104,11 @@ export class LocalRepository implements Repository {
     write(K.cancellations, []);
     write(K.cashSessions, []);
     write(K.cashMovements, []);
+    write(K.cashDrawerEvents, []);
     write(K.auditEvents, []);
+    const now = new Date().toISOString();
+    write(K.printerConfig, { ...seedPrinterConfig, createdAt: now, updatedAt: now });
+    write(K.printJobs, []);
     write(K.settings, seedSettings);
     localStorage.setItem(K.saleSeq, '1000');
     localStorage.setItem(K.seeded, '1');
@@ -459,26 +474,23 @@ export class LocalRepository implements Repository {
       entityId: session.id,
       details: { expectedCash, countedCash: input.countedCash, salesTotal: session.salesTotal, cardTotal: session.cardTotal },
     });
+    if (session.difference != null && session.difference !== 0) {
+      this.audit('cash_close_difference', {
+        userId: input.userId,
+        entity: 'cash_session',
+        entityId: session.id,
+        details: { difference: session.difference, expectedCash, countedCash: session.countedCash },
+      });
+    }
     return ok(session);
   }
 
   /** Efectivo esperado = fondo + ventas efectivo + entradas - salidas. */
   private computeExpectedCash(session: CashSession): number {
-    // Excluye las ventas anuladas: su efectivo no está en el cajón.
-    const sales = read<Sale[]>(K.sales, []).filter(
-      (s) => s.cashSessionId === session.id && s.status !== 'cancelled',
-    );
-    const cashSales = sales.reduce(
-      (acc, s) => acc + s.payments.filter((p) => p.method === 'cash').reduce((a, p) => a + p.amount, 0),
-      0,
-    );
-    // El cambio devuelto ya está implícito (el pago en efectivo registrado es el neto cobrado).
-    const movements = read<CashMovement[]>(K.cashMovements, []).filter(
-      (m) => m.cashSessionId === session.id,
-    );
-    const cashIn = movements.filter((m) => m.type === 'in').reduce((a, m) => a + m.amount, 0);
-    const cashOut = movements.filter((m) => m.type === 'out').reduce((a, m) => a + m.amount, 0);
-    return round2(session.openingFloat + cashSales + cashIn - cashOut);
+    const sales = read<Sale[]>(K.sales, []).filter((s) => s.cashSessionId === session.id);
+    const movements = read<CashMovement[]>(K.cashMovements, []).filter((m) => m.cashSessionId === session.id);
+    // Lógica pura compartida (excluye ventas anuladas internamente).
+    return computeExpectedCash(session.openingFloat, sales, movements);
   }
 
   async listCashSessions(): Promise<CashSession[]> {
@@ -498,6 +510,22 @@ export class LocalRepository implements Repository {
     };
     movements.unshift(mv);
     write(K.cashMovements, movements);
+    // Cada entrada/salida de efectivo deja rastro en el cajón y en auditoría.
+    this.pushDrawerEvent({
+      sessionId: input.cashSessionId,
+      userId: input.userId,
+      username: input.userName ?? '',
+      type: input.type === 'in' ? 'CASH_IN' : 'CASH_OUT',
+      reason: input.reason,
+      amount: mv.amount,
+    });
+    this.audit(input.type === 'in' ? 'cash_in' : 'cash_out', {
+      userId: input.userId,
+      userName: input.userName,
+      entity: 'cash_session',
+      entityId: input.cashSessionId,
+      details: { amount: mv.amount, reason: input.reason },
+    });
     return ok(mv);
   }
 
@@ -515,6 +543,107 @@ export class LocalRepository implements Repository {
     write(K.settings, s);
     this.audit('settings_updated', { entity: 'settings', details: { fiscalMode: s.fiscalMode } });
     return ok(s);
+  }
+
+  /* ------------------- Impresora térmica / cajón ------------------ */
+  async getPrinterConfig(): Promise<PrinterConfig> {
+    const stored = read<Partial<PrinterConfig> | null>(K.printerConfig, null);
+    if (!stored) {
+      const now = new Date().toISOString();
+      return ok({ ...seedPrinterConfig, createdAt: now, updatedAt: now });
+    }
+    // Mezcla con defaults para stores creados antes de añadir campos nuevos.
+    return ok({ ...seedPrinterConfig, ...stored });
+  }
+
+  async savePrinterConfig(cfg: PrinterConfig, actor?: ActorContext): Promise<PrinterConfig> {
+    const prev = read<PrinterConfig | null>(K.printerConfig, null);
+    const now = new Date().toISOString();
+    const saved: PrinterConfig = { ...cfg, createdAt: prev?.createdAt || cfg.createdAt || now, updatedAt: now };
+    write(K.printerConfig, saved);
+    this.audit('printer_config_changed', {
+      userId: actor?.userId,
+      userName: actor?.userName,
+      entity: 'printer_config',
+      entityId: saved.id,
+      details: { connectionType: saved.connectionType, printerName: saved.printerName, paperWidth: saved.paperWidth },
+    });
+    if (prev && prev.drawerPin !== saved.drawerPin) {
+      this.audit('drawer_pin_changed', {
+        userId: actor?.userId, userName: actor?.userName, entity: 'printer_config', entityId: saved.id,
+        details: { from: prev.drawerPin, to: saved.drawerPin },
+      });
+    }
+    if (prev && prev.printerName !== saved.printerName) {
+      this.audit('default_printer_changed', {
+        userId: actor?.userId, userName: actor?.userName, entity: 'printer_config', entityId: saved.id,
+        details: { from: prev.printerName, to: saved.printerName },
+      });
+    }
+    return ok(saved);
+  }
+
+  async recordPrintJob(input: RecordPrintJobInput): Promise<PrintJob> {
+    const job: PrintJob = {
+      id: uid(),
+      saleId: input.saleId ?? null,
+      receiptNumber: input.receiptNumber ?? null,
+      type: input.type,
+      status: input.status,
+      errorMessage: input.errorMessage,
+      printedBy: input.printedBy,
+      printedAt: new Date().toISOString(),
+      copies: input.copies ?? 1,
+    };
+    const jobs = read<PrintJob[]>(K.printJobs, []);
+    jobs.unshift(job);
+    write(K.printJobs, jobs.slice(0, 5000));
+    return ok(job);
+  }
+
+  async listPrintJobs(saleId?: UUID): Promise<PrintJob[]> {
+    const jobs = read<PrintJob[]>(K.printJobs, []);
+    return ok(saleId ? jobs.filter((j) => j.saleId === saleId) : jobs);
+  }
+
+  private pushDrawerEvent(input: RecordCashDrawerEventInput): CashDrawerEvent {
+    const ev: CashDrawerEvent = {
+      id: uid(),
+      sessionId: input.sessionId ?? null,
+      userId: input.userId,
+      username: input.username,
+      type: input.type,
+      reason: input.reason,
+      amount: input.amount,
+      relatedSaleId: input.relatedSaleId ?? null,
+      createdAt: new Date().toISOString(),
+    };
+    const list = read<CashDrawerEvent[]>(K.cashDrawerEvents, []);
+    list.unshift(ev);
+    write(K.cashDrawerEvents, list.slice(0, 5000));
+    return ev;
+  }
+
+  async recordCashDrawerEvent(input: RecordCashDrawerEventInput): Promise<CashDrawerEvent> {
+    return ok(this.pushDrawerEvent(input));
+  }
+
+  async listCashDrawerEvents(sessionId?: UUID): Promise<CashDrawerEvent[]> {
+    const list = read<CashDrawerEvent[]>(K.cashDrawerEvents, []);
+    return ok(sessionId ? list.filter((e) => e.sessionId === sessionId) : list);
+  }
+
+  async listAuditEvents(filter?: AuditFilter): Promise<AuditEvent[]> {
+    let events = read<AuditEvent[]>(K.auditEvents, []);
+    if (filter) {
+      if (filter.type) events = events.filter((e) => e.type === filter.type);
+      if (filter.userId) events = events.filter((e) => e.userId === filter.userId);
+      if (filter.entity) events = events.filter((e) => e.entity === filter.entity);
+      if (filter.entityId) events = events.filter((e) => e.entityId === filter.entityId);
+      if (filter.from) events = events.filter((e) => e.createdAt >= filter.from!);
+      if (filter.to) events = events.filter((e) => e.createdAt <= filter.to!);
+    }
+    return ok(filter?.limit ? events.slice(0, filter.limit) : events);
   }
 
   private audit(type: AuditEvent['type'], event: Omit<AuditEvent, 'id' | 'createdAt' | 'type'>): void {

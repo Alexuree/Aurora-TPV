@@ -10,10 +10,14 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  AuditEvent,
+  CashDrawerEvent,
   CashMovement,
   CashSession,
   Category,
   Customer,
+  PrinterConfig,
+  PrintJob,
   Product,
   ProductPriceChange,
   Sale,
@@ -23,16 +27,20 @@ import type {
   UUID,
 } from '@/domain/types';
 import type {
+  ActorContext,
+  AuditFilter,
   CancelSaleInput,
   AssignSaleCustomerInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
   ProcessSaleInput,
+  RecordCashDrawerEventInput,
+  RecordPrintJobInput,
   Repository,
   SalesFilter,
 } from '@/data/repository';
-import { seedSettings } from '@/data/seed';
+import { seedPrinterConfig, seedSettings } from '@/data/seed';
 import {
   assignPendingSaleCustomer,
   enqueuePendingSale,
@@ -201,6 +209,84 @@ const toCancellation = (r: any): SaleCancellation => ({
   originalTotal: Number(r.original_total),
   paymentMethods: r.payment_methods ?? [],
   cashSessionId: r.cash_session_id ?? null,
+});
+
+const toPrinterConfig = (r: any): PrinterConfig => ({
+  id: r.id,
+  connectionType: r.connection_type,
+  printerName: r.printer_name ?? undefined,
+  ipAddress: r.ip_address ?? undefined,
+  port: r.port != null ? Number(r.port) : undefined,
+  serialPort: r.serial_port ?? undefined,
+  baudRate: r.baud_rate != null ? Number(r.baud_rate) : undefined,
+  paperWidth: (r.paper_width as PrinterConfig['paperWidth']) ?? '80',
+  encoding: (r.encoding as PrinterConfig['encoding']) ?? 'cp858',
+  drawerPin: Number(r.drawer_pin) === 5 ? 5 : 2,
+  autoCut: r.auto_cut ?? true,
+  openDrawerOnCashSale: r.open_drawer_on_cash_sale ?? true,
+  copies: Number(r.copies ?? 1),
+  printLogo: r.print_logo ?? false,
+  logoData: r.logo_data ?? undefined,
+  printQr: r.print_qr ?? true,
+  footerLine: r.footer_line ?? true,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+const fromPrinterConfig = (c: PrinterConfig) => ({
+  id: c.id || 'default',
+  connection_type: c.connectionType,
+  printer_name: c.printerName ?? null,
+  ip_address: c.ipAddress ?? null,
+  port: c.port ?? 9100,
+  serial_port: c.serialPort ?? null,
+  baud_rate: c.baudRate ?? 9600,
+  paper_width: c.paperWidth,
+  encoding: c.encoding,
+  drawer_pin: c.drawerPin,
+  auto_cut: c.autoCut,
+  open_drawer_on_cash_sale: c.openDrawerOnCashSale,
+  copies: c.copies,
+  print_logo: c.printLogo,
+  logo_data: c.logoData ?? null,
+  print_qr: c.printQr,
+  footer_line: c.footerLine,
+  updated_at: new Date().toISOString(),
+});
+
+const toPrintJob = (r: any): PrintJob => ({
+  id: r.id,
+  saleId: r.sale_id ?? null,
+  receiptNumber: r.receipt_number != null ? Number(r.receipt_number) : null,
+  type: r.type,
+  status: r.status,
+  errorMessage: r.error_message ?? undefined,
+  printedBy: r.printed_by,
+  printedAt: r.printed_at,
+  copies: Number(r.copies ?? 1),
+});
+
+const toCashDrawerEvent = (r: any): CashDrawerEvent => ({
+  id: r.id,
+  sessionId: r.session_id ?? null,
+  userId: r.user_id,
+  username: r.username,
+  type: r.type,
+  reason: r.reason ?? undefined,
+  amount: r.amount != null ? Number(r.amount) : undefined,
+  relatedSaleId: r.related_sale_id ?? null,
+  createdAt: r.created_at,
+});
+
+const toAuditEvent = (r: any): AuditEvent => ({
+  id: r.id,
+  createdAt: r.created_at,
+  type: r.type,
+  userId: r.user_id ?? undefined,
+  userName: r.user_name ?? undefined,
+  entity: r.entity ?? undefined,
+  entityId: r.entity_id ?? undefined,
+  details: r.details ?? undefined,
 });
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -440,7 +526,18 @@ export class SupabaseRepository implements Repository {
   async addCashMovement(input: CashMovementInput): Promise<CashMovement> {
     const row = { cash_session_id: input.cashSessionId, type: input.type, amount: input.amount, reason: input.reason, user_id: input.userId };
     const { data, error } = await this.sb.from('cash_movements').insert(row).select().single();
-    return toCashMovement(guard(data, error));
+    const mv = toCashMovement(guard(data, error));
+    // Rastro de cajón + auditoría (inserción cliente; tablas con RLS authenticated).
+    await this.sb.from('cash_drawer_events').insert({
+      session_id: input.cashSessionId,
+      user_id: input.userId,
+      username: input.userName ?? '',
+      type: input.type === 'in' ? 'CASH_IN' : 'CASH_OUT',
+      reason: input.reason,
+      amount: input.amount,
+    });
+    await this.insertAudit(input.type === 'in' ? 'cash_in' : 'cash_out', { userId: input.userId, userName: input.userName }, 'cash_session', input.cashSessionId, { amount: input.amount, reason: input.reason });
+    return mv;
   }
   async listCashMovements(sessionId: UUID): Promise<CashMovement[]> {
     const { data, error } = await this.sb.from('cash_movements').select('*').eq('cash_session_id', sessionId).order('created_at', { ascending: false });
@@ -500,5 +597,103 @@ export class SupabaseRepository implements Repository {
     const { error } = await this.sb.from('settings').upsert(row);
     if (error) throw new Error(error.message);
     return s;
+  }
+
+  /* ------------------- Impresora térmica / cajón ------------------ */
+  async getPrinterConfig(): Promise<PrinterConfig> {
+    const { data, error } = await this.sb.from('printer_config').select('*').eq('id', 'default').maybeSingle();
+    if (error || !data) {
+      const now = new Date().toISOString();
+      return { ...seedPrinterConfig, createdAt: now, updatedAt: now };
+    }
+    return toPrinterConfig(data);
+  }
+
+  async savePrinterConfig(cfg: PrinterConfig, actor?: ActorContext): Promise<PrinterConfig> {
+    const prev = await this.getPrinterConfig().catch(() => null);
+    const { data, error } = await this.sb.from('printer_config').upsert(fromPrinterConfig(cfg)).select().single();
+    const saved = toPrinterConfig(guard(data, error));
+    await this.insertAudit('printer_config_changed', actor, 'printer_config', null, {
+      connectionType: saved.connectionType, printerName: saved.printerName, paperWidth: saved.paperWidth,
+    });
+    if (prev && prev.drawerPin !== saved.drawerPin) {
+      await this.insertAudit('drawer_pin_changed', actor, 'printer_config', null, { from: prev.drawerPin, to: saved.drawerPin });
+    }
+    if (prev && prev.printerName !== saved.printerName) {
+      await this.insertAudit('default_printer_changed', actor, 'printer_config', null, { from: prev.printerName, to: saved.printerName });
+    }
+    return saved;
+  }
+
+  async recordPrintJob(input: RecordPrintJobInput): Promise<PrintJob> {
+    const row = {
+      sale_id: input.saleId ?? null,
+      receipt_number: input.receiptNumber ?? null,
+      type: input.type,
+      status: input.status,
+      error_message: input.errorMessage ?? null,
+      printed_by: input.printedBy,
+      copies: input.copies ?? 1,
+    };
+    const { data, error } = await this.sb.from('print_jobs').insert(row).select().single();
+    return toPrintJob(guard(data, error));
+  }
+
+  async listPrintJobs(saleId?: UUID): Promise<PrintJob[]> {
+    let q = this.sb.from('print_jobs').select('*').order('printed_at', { ascending: false });
+    if (saleId) q = q.eq('sale_id', saleId);
+    const { data, error } = await q;
+    return guard(data, error).map(toPrintJob);
+  }
+
+  async recordCashDrawerEvent(input: RecordCashDrawerEventInput): Promise<CashDrawerEvent> {
+    const row = {
+      session_id: input.sessionId ?? null,
+      user_id: input.userId,
+      username: input.username,
+      type: input.type,
+      reason: input.reason ?? null,
+      amount: input.amount ?? null,
+      related_sale_id: input.relatedSaleId ?? null,
+    };
+    const { data, error } = await this.sb.from('cash_drawer_events').insert(row).select().single();
+    return toCashDrawerEvent(guard(data, error));
+  }
+
+  async listCashDrawerEvents(sessionId?: UUID): Promise<CashDrawerEvent[]> {
+    let q = this.sb.from('cash_drawer_events').select('*').order('created_at', { ascending: false });
+    if (sessionId) q = q.eq('session_id', sessionId);
+    const { data, error } = await q;
+    return guard(data, error).map(toCashDrawerEvent);
+  }
+
+  async listAuditEvents(filter?: AuditFilter): Promise<AuditEvent[]> {
+    let q = this.sb.from('audit_events').select('*').order('created_at', { ascending: false });
+    if (filter?.type) q = q.eq('type', filter.type);
+    if (filter?.userId) q = q.eq('user_id', filter.userId);
+    if (filter?.entity) q = q.eq('entity', filter.entity);
+    if (filter?.entityId) q = q.eq('entity_id', filter.entityId);
+    if (filter?.from) q = q.gte('created_at', filter.from);
+    if (filter?.to) q = q.lte('created_at', filter.to);
+    q = q.limit(filter?.limit ?? 500);
+    const { data, error } = await q;
+    return guard(data, error).map(toAuditEvent);
+  }
+
+  private async insertAudit(
+    type: string,
+    actor: ActorContext | undefined,
+    entity: string,
+    entityId: string | null,
+    details: Record<string, unknown>,
+  ): Promise<void> {
+    await this.sb.from('audit_events').insert({
+      type,
+      user_id: actor?.userId ?? null,
+      user_name: actor?.userName ?? null,
+      entity,
+      entity_id: entityId,
+      details,
+    });
   }
 }

@@ -5,7 +5,7 @@
 // beneficio en informes.
 // =====================================================================
 
-import type { Category, Product, Settings, User } from '@/domain/types';
+import type { Category, PrinterConfig, Product, Settings, User } from '@/domain/types';
 
 export const seedCategories: Category[] = [
   { id: 'cat-perf-mujer', name: 'Perfumes Mujer', color: '#ec4899', sortOrder: 1, active: true },
@@ -111,4 +111,32 @@ export const seedSettings: Settings = {
   completeInvoiceSeries: 'FC',
   defaultInvoiceType: 'simplified',
   enableFiscalQr: true,
+};
+
+/**
+ * Configuración por defecto de impresora térmica y cajón.
+ * 'windows-printer' es lo más habitual: una térmica USB instalada como
+ * impresora de Windows recibe los bytes ESC/POS por el spooler RAW.
+ * Las marcas de tiempo las rellena el repositorio al guardar/seedear.
+ */
+export const seedPrinterConfig: PrinterConfig = {
+  id: 'default',
+  connectionType: 'windows-printer',
+  printerName: undefined,
+  ipAddress: undefined,
+  port: 9100,
+  serialPort: 'COM1',
+  baudRate: 9600,
+  paperWidth: '80',
+  encoding: 'cp858',
+  drawerPin: 2,
+  autoCut: true,
+  openDrawerOnCashSale: true,
+  copies: 1,
+  printLogo: false,
+  logoData: undefined,
+  printQr: true,
+  footerLine: true,
+  createdAt: '',
+  updatedAt: '',
 };
