@@ -1,7 +1,8 @@
 // Configuración de la tienda y de la PLANTILLA DE TICKET, con vista previa.
 
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Save, Upload, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Download, Printer, Save, Upload, X } from 'lucide-react';
 import type { FiscalMode, InvoiceType, Sale, Settings, TicketWidth } from '@/domain/types';
 import { useSaveSettings, useSettings } from '@/hooks/data';
 import { dataMode } from '@/config/env';
@@ -66,6 +67,7 @@ export function SettingsPage() {
     <div className="flex h-full flex-col">
       <PageHeader title="Ajustes" subtitle="Datos de la tienda y plantilla del ticket." actions={
         <div className="flex gap-2">
+          <Link to="/ajustes/impresora"><Button variant="outline"><Printer size={18} /> Impresora y cajón</Button></Link>
           <Button variant="outline" onClick={downloadLocalBackup}><Download size={18} /> Backup</Button>
           <Button onClick={async () => { await save.mutateAsync(form); setSaved(true); setTimeout(() => setSaved(false), 2000); }} disabled={save.isPending}>
             <Save size={18} /> {saved ? 'Guardado ✓' : 'Guardar'}
