@@ -295,6 +295,72 @@ function guard<T>(data: T | null, error: { message: string } | null): T {
   return data as T;
 }
 
+const SETTINGS_OVERRIDE_KEY = 'aurora-tpv:supabase-settings-override';
+
+function canUseLocalStorage(): boolean {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function readSettingsOverride(): Partial<Settings> {
+  if (!canUseLocalStorage()) return {};
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_OVERRIDE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<Settings>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSettingsOverride(settings: Settings): void {
+  if (!canUseLocalStorage()) return;
+  window.localStorage.setItem(SETTINGS_OVERRIDE_KEY, JSON.stringify(settings));
+}
+
+function clearSettingsOverride(): void {
+  if (!canUseLocalStorage()) return;
+  window.localStorage.removeItem(SETTINGS_OVERRIDE_KEY);
+}
+
+function isMissingSettingsColumnError(error: { message: string } | null): boolean {
+  return Boolean(error?.message && /column .*settings|settings.*schema cache|schema cache/i.test(error.message));
+}
+
+function settingsRow(s: Settings) {
+  return {
+    id: 1,
+    store_name: s.storeName,
+    legal_name: s.legalName,
+    tax_id: s.taxId,
+    address: s.address,
+    phone: s.phone,
+    email: s.email,
+    ticket_footer: s.ticketFooter,
+    currency: s.currency,
+    default_iva: s.defaultIva,
+    ticket_width: s.ticketWidth,
+    show_tax_breakdown: s.showTaxBreakdown,
+    header_text: s.headerText,
+    return_policy: s.returnPolicy,
+    legal_text: s.legalText,
+    logo_url: s.logoUrl ?? null,
+    fiscal_mode: s.fiscalMode,
+    simplified_invoice_series: s.simplifiedInvoiceSeries,
+    complete_invoice_series: s.completeInvoiceSeries,
+    default_invoice_type: s.defaultInvoiceType,
+    enable_fiscal_qr: s.enableFiscalQr,
+  };
+}
+
+function settingsRowWithoutFiscal(s: Settings) {
+  const row: Record<string, unknown> = { ...settingsRow(s) };
+  delete row.fiscal_mode;
+  delete row.simplified_invoice_series;
+  delete row.complete_invoice_series;
+  delete row.default_invoice_type;
+  delete row.enable_fiscal_qr;
+  return row;
+}
+
 /* --------------------------- Repository --------------------------- */
 
 export class SupabaseRepository implements Repository {
@@ -546,8 +612,8 @@ export class SupabaseRepository implements Repository {
 
   async getSettings(): Promise<Settings> {
     const { data, error } = await this.sb.from('settings').select('*').eq('id', 1).single();
-    if (error || !data) return seedSettings;
-    return {
+    if (error || !data) return { ...seedSettings, ...readSettingsOverride() };
+    return { ...{
       storeName: data.store_name,
       legalName: data.legal_name,
       taxId: data.tax_id,
@@ -568,34 +634,26 @@ export class SupabaseRepository implements Repository {
       completeInvoiceSeries: data.complete_invoice_series ?? 'FC',
       defaultInvoiceType: data.default_invoice_type ?? 'simplified',
       enableFiscalQr: data.enable_fiscal_qr ?? true,
-    };
+    }, ...readSettingsOverride() };
   }
   async saveSettings(s: Settings): Promise<Settings> {
-    const row = {
-      id: 1,
-      store_name: s.storeName,
-      legal_name: s.legalName,
-      tax_id: s.taxId,
-      address: s.address,
-      phone: s.phone,
-      email: s.email,
-      ticket_footer: s.ticketFooter,
-      currency: s.currency,
-      default_iva: s.defaultIva,
-      ticket_width: s.ticketWidth,
-      show_tax_breakdown: s.showTaxBreakdown,
-      header_text: s.headerText,
-      return_policy: s.returnPolicy,
-      legal_text: s.legalText,
-      logo_url: s.logoUrl ?? null,
-      fiscal_mode: s.fiscalMode,
-      simplified_invoice_series: s.simplifiedInvoiceSeries,
-      complete_invoice_series: s.completeInvoiceSeries,
-      default_invoice_type: s.defaultInvoiceType,
-      enable_fiscal_qr: s.enableFiscalQr,
-    };
-    const { error } = await this.sb.from('settings').upsert(row);
-    if (error) throw new Error(error.message);
+    const { error } = await this.sb.from('settings').upsert(settingsRow(s));
+    if (!error) {
+      clearSettingsOverride();
+      return s;
+    }
+
+    if (!isMissingSettingsColumnError(error)) throw new Error(error.message);
+
+    const { error: withoutFiscalError } = await this.sb.from('settings').upsert(settingsRowWithoutFiscal(s));
+    if (!withoutFiscalError) {
+      clearSettingsOverride();
+      return s;
+    }
+
+    if (!isMissingSettingsColumnError(withoutFiscalError)) throw new Error(withoutFiscalError.message);
+
+    writeSettingsOverride(s);
     return s;
   }
 
