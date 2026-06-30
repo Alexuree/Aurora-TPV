@@ -310,7 +310,19 @@ export type AuditEventType =
   | 'discount_applied'
   | 'settings_updated'
   | 'backup_created'
-  | 'user_updated';
+  | 'user_updated'
+  // --- Impresión térmica y cajón registrador ---
+  | 'print_success'
+  | 'print_failed'
+  | 'reprint'
+  | 'drawer_opened'
+  | 'drawer_manual_open'
+  | 'cash_in'
+  | 'cash_out'
+  | 'printer_config_changed'
+  | 'drawer_pin_changed'
+  | 'default_printer_changed'
+  | 'cash_close_difference';
 
 export interface AuditEvent {
   id: UUID;
@@ -321,4 +333,79 @@ export interface AuditEvent {
   entity?: string;
   entityId?: UUID;
   details?: Record<string, unknown>;
+}
+
+/* --------------------- Impresión térmica / cajón ------------------- */
+
+/** Tipo de conexión física a la impresora térmica. */
+export type PrinterConnectionType = 'usb' | 'network' | 'serial' | 'windows-printer';
+
+/** Codificación de caracteres enviada a la impresora. */
+export type PrinterEncoding = 'cp858' | 'cp850' | 'utf8';
+
+/** Pin del conector RJ11 del cajón (estándar ESC/POS). */
+export type DrawerPin = 2 | 5;
+
+/**
+ * Configuración de la impresora térmica y del cajón. Una sola fila
+ * (id 'default'). El proceso principal de Electron es STATELESS: el
+ * renderer pasa esta config en cada llamada de impresión/cajón.
+ */
+export interface PrinterConfig {
+  id: string; // 'default'
+  connectionType: PrinterConnectionType;
+  printerName?: string; // impresora de Windows (windows-printer/usb)
+  ipAddress?: string; // impresora de red
+  port?: number; // puerto de red (9100 por defecto)
+  serialPort?: string; // 'COM1' (serie)
+  baudRate?: number; // 9600 por defecto (serie)
+  paperWidth: TicketWidth; // '58' | '80'
+  encoding: PrinterEncoding;
+  drawerPin: DrawerPin;
+  autoCut: boolean;
+  openDrawerOnCashSale: boolean;
+  copies: number;
+  printLogo: boolean;
+  logoData?: string; // data URL o raster (opcional)
+  printQr: boolean;
+  footerLine: boolean;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+}
+
+export type PrintJobType = 'ORIGINAL' | 'COPY' | 'TEST';
+export type PrintJobStatus = 'SUCCESS' | 'FAILED' | 'PENDING';
+
+/** Registro de cada intento de impresión (trazabilidad). */
+export interface PrintJob {
+  id: UUID;
+  saleId?: UUID | null;
+  receiptNumber?: number | null;
+  type: PrintJobType;
+  status: PrintJobStatus;
+  errorMessage?: string;
+  printedBy: UUID;
+  printedAt: ISODate;
+  copies: number;
+}
+
+export type CashDrawerEventType =
+  | 'SALE_CASH'
+  | 'REFUND_CASH'
+  | 'MANUAL_OPEN'
+  | 'CASH_IN'
+  | 'CASH_OUT'
+  | 'TEST_OPEN';
+
+/** Registro de cada apertura/movimiento del cajón registrador. */
+export interface CashDrawerEvent {
+  id: UUID;
+  sessionId?: UUID | null;
+  userId: UUID;
+  username: string;
+  type: CashDrawerEventType;
+  reason?: string;
+  amount?: number;
+  relatedSaleId?: UUID | null;
+  createdAt: ISODate;
 }

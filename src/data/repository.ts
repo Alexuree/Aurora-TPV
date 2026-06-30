@@ -5,12 +5,19 @@
 // =====================================================================
 
 import type {
+  AuditEvent,
+  CashDrawerEvent,
+  CashDrawerEventType,
   CashMovement,
   CashSession,
   Category,
   Customer,
   CustomerSnapshot,
   PaymentPart,
+  PrinterConfig,
+  PrintJob,
+  PrintJobStatus,
+  PrintJobType,
   Product,
   ProductPriceChange,
   Sale,
@@ -87,6 +94,8 @@ export interface CashMovementInput {
   amount: number;
   reason: string;
   userId: UUID;
+  /** Nombre del usuario (para el evento de cajón asociado). */
+  userName?: string;
 }
 
 export interface SalesFilter {
@@ -95,6 +104,44 @@ export interface SalesFilter {
   cashierId?: UUID;
   status?: string;
   search?: string;
+}
+
+/* ---------------- Impresión térmica / cajón / auditoría ------------ */
+
+export interface RecordPrintJobInput {
+  saleId?: UUID | null;
+  receiptNumber?: number | null;
+  type: PrintJobType;
+  status: PrintJobStatus;
+  errorMessage?: string;
+  printedBy: UUID;
+  copies?: number;
+}
+
+export interface RecordCashDrawerEventInput {
+  sessionId?: UUID | null;
+  userId: UUID;
+  username: string;
+  type: CashDrawerEventType;
+  reason?: string;
+  amount?: number;
+  relatedSaleId?: UUID | null;
+}
+
+/** Quién realiza un cambio sensible (para auditoría). */
+export interface ActorContext {
+  userId?: UUID;
+  userName?: string;
+}
+
+export interface AuditFilter {
+  type?: string;
+  userId?: UUID;
+  from?: string;
+  to?: string;
+  entity?: string;
+  entityId?: UUID;
+  limit?: number;
 }
 
 /* --------------------------- Interfaz ------------------------------ */
@@ -149,4 +196,15 @@ export interface Repository {
   // Ajustes
   getSettings(): Promise<Settings>;
   saveSettings(s: Settings): Promise<Settings>;
+
+  // Impresora térmica y cajón
+  getPrinterConfig(): Promise<PrinterConfig>;
+  savePrinterConfig(cfg: PrinterConfig, actor?: ActorContext): Promise<PrinterConfig>;
+  recordPrintJob(input: RecordPrintJobInput): Promise<PrintJob>;
+  listPrintJobs(saleId?: UUID): Promise<PrintJob[]>;
+  recordCashDrawerEvent(input: RecordCashDrawerEventInput): Promise<CashDrawerEvent>;
+  listCashDrawerEvents(sessionId?: UUID): Promise<CashDrawerEvent[]>;
+
+  // Auditoría (lectura)
+  listAuditEvents(filter?: AuditFilter): Promise<AuditEvent[]>;
 }

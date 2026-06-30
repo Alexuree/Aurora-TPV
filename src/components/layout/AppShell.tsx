@@ -9,8 +9,10 @@ import {
   Contact,
   LogOut,
   Package,
+  Printer,
   ReceiptText,
   Settings as SettingsIcon,
+  ShieldCheck,
   ShoppingCart,
   Users,
   Wallet,
@@ -38,7 +40,9 @@ const NAV: NavItem[] = [
   { to: '/caja', label: 'Caja', icon: <Wallet size={22} />, permission: 'open_close_cash' },
   { to: '/informes', label: 'Informes', icon: <BarChart3 size={22} />, permission: 'view_reports' },
   { to: '/usuarios', label: 'Usuarios', icon: <Users size={22} />, permission: 'manage_users' },
-  { to: '/ajustes', label: 'Ajustes', icon: <SettingsIcon size={22} />, permission: 'manage_settings' },
+  { to: '/ajustes', label: 'Ajustes', icon: <SettingsIcon size={22} />, permission: 'manage_settings', end: true },
+  { to: '/ajustes/impresora', label: 'Impresora', icon: <Printer size={22} />, permission: 'manage_settings' },
+  { to: '/auditoria', label: 'Auditoría', icon: <ShieldCheck size={22} />, permission: 'manage_settings' },
 ];
 
 export function AppShell() {

@@ -21,6 +21,7 @@ import { formatDateTime } from '@/lib/format';
 import { getPrinterService } from '@/lib/printing';
 import { PAYMENT_LABELS } from '@/domain/payments';
 import { Button, Field, Modal, PageHeader, inputClass } from '@/components/ui';
+import { CashDrawerButton } from '@/components/pos/CashDrawerButton';
 
 function paymentSummary(sales: Sale[]): Record<PaymentMethod, number> {
   const acc: Record<PaymentMethod, number> = { cash: 0, card: 0 };
@@ -104,7 +105,12 @@ export function CashPage() {
       <PageHeader
         title="Caja abierta"
         subtitle={`Abierta por ${openSession.openedByName} · ${formatDateTime(openSession.openedAt)}`}
-        actions={<Button variant="danger" onClick={() => setShowClose(true)}>Cerrar caja</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            <CashDrawerButton sessionId={openSession.id} />
+            <Button variant="danger" onClick={() => setShowClose(true)}>Cerrar caja</Button>
+          </div>
+        }
       />
 
       <div className="grid grid-cols-1 gap-4 p-6 lg:grid-cols-3">
