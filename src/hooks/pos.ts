@@ -128,7 +128,7 @@ export function usePrintSaleFlow() {
   const qc = useQueryClient();
   const user = useAuth((s) => s.user);
   return useMutation({
-    mutationFn: async (v: { sale: Sale; settings: Settings; config: PrinterConfig }) => {
+    mutationFn: async (v: { sale: Sale; settings: Settings; config: PrinterConfig; openDrawer?: boolean }) => {
       const { sale, settings, config } = v;
       if (!isDesktopPrinting()) return { print: NO_DESKTOP, drawer: NO_DESKTOP, skipped: true };
 
@@ -147,7 +147,7 @@ export function usePrintSaleFlow() {
 
       let drawer: PosResult = { ok: true };
       const hasCash = sale.payments.some((p) => p.method === 'cash');
-      if (hasCash && config.openDrawerOnCashSale) {
+      if (hasCash && config.openDrawerOnCashSale && v.openDrawer !== false) {
         drawer = await window.pos!.openCashDrawer(config);
         await repo.recordCashDrawerEvent({
           sessionId: sale.cashSessionId,

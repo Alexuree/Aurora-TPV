@@ -4,11 +4,12 @@ import { useState } from 'react';
 import { Ban, Eye, Printer, RotateCw, Search, UserRound } from 'lucide-react';
 import type { Customer, Sale, SaleStatus } from '@/domain/types';
 import { useAssignSaleCustomer, useSales, useSetSalePrintStatus, useSettings } from '@/hooks/data';
+import { usePrinterConfig, useReprintTicket } from '@/hooks/pos';
 import { useAuth } from '@/store/authStore';
 import { snapshotFromCustomer } from '@/domain/customers';
 import { formatMoney } from '@/domain/money';
 import { formatDateTime, daysAgo, startOfToday } from '@/lib/format';
-import { getPrinterService } from '@/lib/printing';
+import { getPrinterService, isDesktopPrinting } from '@/lib/printing';
 import { Badge, Button, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
 import { Receipt } from '@/components/pos/Receipt';
 import { CancelTicketModal } from '@/components/pos/CancelTicketModal';
@@ -30,8 +31,10 @@ export function SalesHistoryPage() {
   const [cancelTarget, setCancelTarget] = useState<Sale | null>(null);
   const [customerTarget, setCustomerTarget] = useState<Sale | null>(null);
   const { data: settings } = useSettings();
+  const { data: printerConfig } = usePrinterConfig();
   const setPrintStatus = useSetSalePrintStatus();
   const assignCustomer = useAssignSaleCustomer();
+  const reprint = useReprintTicket();
   const can = useAuth((s) => s.can);
   const user = useAuth((s) => s.user);
 
@@ -41,7 +44,14 @@ export function SalesHistoryPage() {
   const total = sales.filter((s) => s.status !== 'cancelled').reduce((a, s) => a + s.total, 0);
   const lastSale = sales.find((s) => s.status !== 'cancelled') ?? null;
 
+  // Reimpresión: en escritorio imprime una COPIA por la térmica (ESC/POS) y
+  // registra el PrintJob + auditoría; en navegador usa el diálogo del sistema.
   const printTicket = async (s: Sale) => {
+    if (isDesktopPrinting() && printerConfig && settings) {
+      const res = await reprint.mutateAsync({ sale: s, settings, config: printerConfig });
+      setPrintStatus.mutate({ id: s.id, status: res.ok ? 'printed' : 'failed' });
+      return;
+    }
     const res = await getPrinterService().print();
     setPrintStatus.mutate({ id: s.id, status: res.ok ? 'printed' : 'failed' });
   };
