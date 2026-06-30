@@ -1,9 +1,7 @@
-// Modal tras finalizar la venta. En escritorio imprime el ticket por la
-// impresora térmica (ESC/POS) y abre el cajón si el pago lleva efectivo;
-// si la impresión falla, la venta NO se pierde y se puede reintentar.
-// En navegador/dev sin Electron, ofrece imprimir con el diálogo del sistema.
+// Modal tras finalizar la venta. No imprime automáticamente: muchos clientes
+// no necesitan ticket. El cajón y la impresión son acciones manuales.
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { AlertTriangle, Check, Inbox, Printer } from 'lucide-react';
 import type { Sale, Settings } from '@/domain/types';
 import { formatMoney } from '@/domain/money';
@@ -25,38 +23,21 @@ export function ReceiptModal({ sale, settings, onClose }: { sale: Sale; settings
   const [state, setState] = useState<PrintState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [drawerOpened, setDrawerOpened] = useState(false);
-  const ran = useRef(false);
 
   const hasCash = sale.payments.some((p) => p.method === 'cash');
 
-  // Impresión automática del ticket original al abrir (solo escritorio).
-  useEffect(() => {
-    if (ran.current || !config || !desktop) return;
-    ran.current = true;
-    setState('printing');
-    printFlow
-      .mutateAsync({ sale, settings, config })
-      .then((res) => {
-        setState(res.print.ok ? 'ok' : 'failed');
-        if (!res.print.ok) setError(res.print.error ?? null);
-        if (res.print.ok && hasCash && config.openDrawerOnCashSale) setDrawerOpened(true);
-      })
-      .catch((e) => { setState('failed'); setError(e instanceof Error ? e.message : 'Error de impresión'); });
-  }, [config, desktop, hasCash, printFlow, sale, settings]);
-
-  const retry = async () => {
-    if (!config) return;
+  const printReceipt = async () => {
     setState('printing');
     setError(null);
-    const res = await printFlow.mutateAsync({ sale, settings, config, openDrawer: false });
-    setState(res.print.ok ? 'ok' : 'failed');
-    if (!res.print.ok) setError(res.print.error ?? null);
-  };
-
-  const browserPrint = async () => {
-    setState('printing');
+    if (desktop && config) {
+      const res = await printFlow.mutateAsync({ sale, settings, config, openDrawer: false });
+      setState(res.print.ok ? 'ok' : 'failed');
+      if (!res.print.ok) setError(res.print.error ?? null);
+      return;
+    }
     const res = await getPrinterService().print();
     setState(res.ok ? 'ok' : 'failed');
+    if (!res.ok) setError(res.error ?? null);
     setPrintStatus.mutate({ id: sale.id, status: res.ok ? 'printed' : 'failed' });
   };
 
@@ -70,25 +51,18 @@ export function ReceiptModal({ sale, settings, onClose }: { sale: Sale; settings
     <Modal
       open
       onClose={onClose}
+      title={`Ticket #${sale.number}`}
       size="sm"
       footer={
         <div className="no-print flex w-full gap-2">
-          {desktop ? (
-            state === 'failed' ? (
-              <Button variant="outline" className="flex-1" onClick={retry} disabled={printFlow.isPending}>
-                <Printer size={18} /> Reintentar
-              </Button>
-            ) : (
-              <Button variant="outline" className="flex-1" onClick={openDrawer} disabled={manualDrawer.isPending || drawerOpened}>
-                <Inbox size={18} /> {drawerOpened ? 'Cajón abierto' : 'Abrir cajón'}
-              </Button>
-            )
-          ) : (
-            <Button variant="outline" className="flex-1" onClick={browserPrint} disabled={state === 'printing'}>
-              <Printer size={18} /> {state === 'printing' ? 'Imprimiendo…' : 'Imprimir'}
+          {desktop && hasCash && (
+            <Button variant="outline" className="flex-1" onClick={openDrawer} disabled={manualDrawer.isPending || drawerOpened}>
+              <Inbox size={18} /> {drawerOpened ? 'Cajón abierto' : 'Abrir cajón'}
             </Button>
           )}
-          <Button variant="primary" className="flex-1" onClick={onClose}>Nueva venta</Button>
+          <Button variant="primary" className="flex-1" onClick={printReceipt} disabled={state === 'printing' || (desktop && !config)}>
+            <Printer size={18} /> {state === 'printing' ? 'Imprimiendo…' : state === 'ok' ? 'Imprimir otra vez' : 'Imprimir'}
+          </Button>
         </div>
       }
     >
@@ -107,7 +81,7 @@ export function ReceiptModal({ sale, settings, onClose }: { sale: Sale; settings
         )}
         {desktop && state === 'ok' && (
           <p className="mt-2 flex items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
-            <Check size={14} /> Ticket impreso{drawerOpened ? ' · Cajón abierto' : ''}
+            <Check size={14} /> Ticket impreso{drawerOpened ? ' · Cajón abierto' : ''}. Cierra esta ventana para nueva venta.
           </p>
         )}
         {desktop && state === 'failed' && (
