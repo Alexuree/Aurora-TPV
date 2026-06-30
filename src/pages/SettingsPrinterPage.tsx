@@ -142,7 +142,6 @@ export function SettingsPrinterPage() {
                 <Field label="Copias por ticket"><input type="number" min={1} max={5} className={inputClass} value={form.copies} onChange={(e) => set('copies', Math.max(1, parseInt(e.target.value) || 1))} /></Field>
                 <Toggle label="Cortar papel automáticamente" checked={form.autoCut} onChange={(v) => set('autoCut', v)} />
                 <Toggle label="Imprimir QR fiscal" checked={form.printQr} onChange={(v) => set('printQr', v)} />
-                <Toggle label="Imprimir logo (raster)" checked={form.printLogo} onChange={(v) => set('printLogo', v)} hint="Logo raster pendiente en v1; se imprime el nombre en grande." />
               </div>
             </section>
 

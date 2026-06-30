@@ -13,7 +13,7 @@
 // Contrato del payload (lo construye el renderer a partir de Sale+Settings):
 //   {
 //     type: 'ORIGINAL' | 'COPY' | 'TEST',
-//     store: { name, headerText, legalName, taxId, address, phone, footer, legalText },
+//     store: { name, logoData, headerText, legalName, taxId, address, phone, footer, legalText },
 //     sale: {
 //       number, fiscalNumber, createdAt (ISO), cashierName,
 //       customer: { name, taxId, address, postalCode, city } | null,
@@ -141,6 +141,47 @@ function qrBytes(text, size) {
   return Buffer.concat(store);
 }
 
+function logoRasterBytes(dataUrl, maxWidthDots) {
+  if (!dataUrl) return null;
+  let nativeImage;
+  try {
+    nativeImage = require('electron').nativeImage;
+  } catch (_) {
+    return null;
+  }
+  const image = nativeImage.createFromDataURL(String(dataUrl));
+  const size = image.getSize();
+  if (!size.width || !size.height) return null;
+
+  const targetWidth = Math.min(maxWidthDots, size.width);
+  const targetHeight = Math.max(1, Math.round(size.height * (targetWidth / size.width)));
+  const resized = image.resize({ width: targetWidth, height: targetHeight, quality: 'best' });
+  const bitmap = resized.getBitmap();
+  const width = resized.getSize().width;
+  const height = resized.getSize().height;
+  const bytesPerRow = Math.ceil(width / 8);
+  const data = Buffer.alloc(bytesPerRow * height);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const b = bitmap[i] ?? 255;
+      const g = bitmap[i + 1] ?? 255;
+      const r = bitmap[i + 2] ?? 255;
+      const a = bitmap[i + 3] ?? 255;
+      const alpha = a / 255;
+      const lum = ((0.299 * r + 0.587 * g + 0.114 * b) * alpha) + (255 * (1 - alpha));
+      if (lum < 180) data[y * bytesPerRow + (x >> 3)] |= 0x80 >> (x & 7);
+    }
+  }
+
+  return Buffer.concat([
+    Buffer.from([GS, 0x76, 0x30, 0x00, bytesPerRow & 0xff, (bytesPerRow >> 8) & 0xff, height & 0xff, (height >> 8) & 0xff]),
+    data,
+    CMD.LF,
+  ]);
+}
+
 /* ------------------------ Constructor del ticket ------------------- */
 
 /**
@@ -178,9 +219,9 @@ function buildReceiptBytes(payload, config) {
 
   // --- Cabecera de tienda ---
   out(CMD.ALIGN_CENTER);
-  if (cfg.printLogo && cfg.logoData) {
-    // Logo raster no implementado en v1 (sin decodificador de imagen).
-    // Se imprime el nombre en grande como sustituto.
+  if (store.logoData) {
+    const logo = logoRasterBytes(store.logoData, Math.min(width * 8, String(cfg.paperWidth) === '58' ? 240 : 384));
+    if (logo) out(logo);
   }
   out(CMD.SIZE_DOUBLE_H);
   out(CMD.BOLD_ON);

@@ -100,6 +100,7 @@ export function buildReceiptPayload(
     type,
     store: {
       name: settings.storeName,
+      logoData: settings.logoUrl || undefined,
       headerText: settings.headerText || undefined,
       legalName: settings.legalName,
       taxId: settings.taxId,

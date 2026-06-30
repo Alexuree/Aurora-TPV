@@ -41,6 +41,7 @@ export function Receipt({ sale, settings }: { sale: Sale; settings: Settings }) 
 
       {/* Logo + datos de tienda */}
       <div className="text-center">
+        {store.logoData && <img src={store.logoData} alt="logo" className="mx-auto mb-1 max-h-12 max-w-[160px] object-contain" />}
         <p className="text-base font-bold">{store.name}</p>
         {store.headerText && <p>{store.headerText}</p>}
         {(store.legalName || store.taxId) && <p>{[store.legalName, store.taxId].filter(Boolean).join(' · ')}</p>}

@@ -12,6 +12,7 @@ import type { PrinterConfig } from '@/domain/types';
 
 export interface ReceiptStorePayload {
   name: string;
+  logoData?: string;
   headerText?: string;
   legalName?: string;
   taxId?: string;
