@@ -11,6 +11,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    // Lógica pura de la app + tests de bytes ESC/POS del proceso de Electron.
+    include: ['src/**/*.test.ts', 'electron/**/*.test.ts'],
   },
 });
