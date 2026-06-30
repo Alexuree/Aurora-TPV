@@ -58,6 +58,15 @@ export interface CancelSaleInput {
   userName: string;
 }
 
+export interface AssignSaleCustomerInput {
+  saleId: UUID;
+  userId?: UUID;
+  userName?: string;
+  customerId: UUID | null;
+  customerName: string;
+  customerSnapshot?: CustomerSnapshot | null;
+}
+
 export interface OpenCashInput {
   userId: UUID;
   userName: string;
@@ -122,6 +131,7 @@ export interface Repository {
   processSale(input: ProcessSaleInput): Promise<Sale>;
   listSales(filter?: SalesFilter): Promise<Sale[]>;
   getSale(id: UUID): Promise<Sale | null>;
+  assignSaleCustomer(input: AssignSaleCustomerInput): Promise<Sale>;
   setSalePrintStatus(saleId: UUID, status: 'pending' | 'printed' | 'failed'): Promise<void>;
 
   // Anulaciones

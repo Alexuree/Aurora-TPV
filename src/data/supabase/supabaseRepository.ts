@@ -24,6 +24,7 @@ import type {
 } from '@/domain/types';
 import type {
   CancelSaleInput,
+  AssignSaleCustomerInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
@@ -32,6 +33,15 @@ import type {
   SalesFilter,
 } from '@/data/repository';
 import { seedSettings } from '@/data/seed';
+import {
+  assignPendingSaleCustomer,
+  enqueuePendingSale,
+  getPendingSale,
+  isConnectionError,
+  listPendingSales,
+  syncPendingOperations,
+  updatePendingPrintStatus,
+} from '@/data/supabase/pendingSync';
 
 /* --------------------------- Mappers ------------------------------ */
 
@@ -203,7 +213,12 @@ function guard<T>(data: T | null, error: { message: string } | null): T {
 
 export class SupabaseRepository implements Repository {
   readonly mode = 'supabase' as const;
-  constructor(private sb: SupabaseClient) {}
+  constructor(private sb: SupabaseClient) {
+    if (typeof window !== 'undefined') {
+      void syncPendingOperations(this.sb);
+      window.addEventListener('online', () => void syncPendingOperations(this.sb));
+    }
+  }
 
   async login(username: string, pin: string): Promise<User | null> {
     // En modo Supabase, username = email y pin = contraseña.
@@ -313,29 +328,64 @@ export class SupabaseRepository implements Repository {
   }
 
   async processSale(input: ProcessSaleInput): Promise<Sale> {
-    const { data, error } = await this.sb.rpc('process_sale', { payload: input });
-    if (error) throw new Error(error.message);
-    const saleId = typeof data === 'string' ? data : data?.id;
+    let saleId: string | undefined;
+    try {
+      await syncPendingOperations(this.sb);
+      const { data, error } = await this.sb.rpc('process_sale', { payload: input });
+      if (error) throw new Error(error.message);
+      saleId = typeof data === 'string' ? data : data?.id;
+    } catch (error) {
+      if (!isConnectionError(error)) throw error;
+      return enqueuePendingSale(input, error);
+    }
+    if (!saleId) throw new Error('Venta creada, pero Supabase no devolvio el identificador');
     const sale = await this.getSale(saleId);
-    if (!sale) throw new Error('No se pudo recuperar la venta creada');
+    if (!sale) throw new Error('Venta creada, pero no se pudo recuperar el ticket');
     return sale;
   }
 
   async listSales(filter?: SalesFilter): Promise<Sale[]> {
-    let q = this.sb.from('sales').select('*, sale_items(*), payments(*)').order('number', { ascending: false });
-    if (filter?.from) q = q.gte('created_at', filter.from);
-    if (filter?.to) q = q.lte('created_at', filter.to);
-    if (filter?.cashierId) q = q.eq('cashier_id', filter.cashierId);
-    if (filter?.status) q = q.eq('status', filter.status);
-    const { data, error } = await q;
-    return guard(data, error).map(toSale);
+    const pendingSales = listPendingSales().filter((sale) => {
+      if (filter?.from && sale.createdAt < filter.from) return false;
+      if (filter?.to && sale.createdAt > filter.to) return false;
+      if (filter?.cashierId && sale.cashierId !== filter.cashierId) return false;
+      if (filter?.status && sale.status !== filter.status) return false;
+      return true;
+    });
+    try {
+      await syncPendingOperations(this.sb);
+      let q = this.sb.from('sales').select('*, sale_items(*), payments(*)').order('number', { ascending: false });
+      if (filter?.from) q = q.gte('created_at', filter.from);
+      if (filter?.to) q = q.lte('created_at', filter.to);
+      if (filter?.cashierId) q = q.eq('cashier_id', filter.cashierId);
+      if (filter?.status) q = q.eq('status', filter.status);
+      const { data, error } = await q;
+      const syncedSales = guard(data, error).map(toSale);
+      return [...pendingSales, ...syncedSales].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    } catch (error) {
+      if (isConnectionError(error)) return pendingSales;
+      throw error;
+    }
   }
   async getSale(id: UUID): Promise<Sale | null> {
+    const pending = getPendingSale(id);
+    if (pending) return pending;
     const { data, error } = await this.sb.from('sales').select('*, sale_items(*), payments(*)').eq('id', id).single();
     if (error) return null;
     return data ? toSale(data) : null;
   }
+  async assignSaleCustomer(input: AssignSaleCustomerInput): Promise<Sale> {
+    const pending = assignPendingSaleCustomer(input);
+    if (pending) return pending;
+    const { data, error } = await this.sb.rpc('assign_sale_customer', { payload: input });
+    if (error) throw new Error(error.message);
+    const saleId = typeof data === 'string' ? data : data?.id;
+    const sale = await this.getSale(saleId);
+    if (!sale) throw new Error('No se pudo recuperar la venta actualizada');
+    return sale;
+  }
   async setSalePrintStatus(saleId: UUID, status: 'pending' | 'printed' | 'failed'): Promise<void> {
+    if (updatePendingPrintStatus(saleId, status)) return;
     const { error } = await this.sb.from('sales').update({ print_status: status }).eq('id', saleId);
     if (error) throw new Error(error.message);
   }

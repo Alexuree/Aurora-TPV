@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { repo } from '@/data';
 import type {
   CancelSaleInput,
+  AssignSaleCustomerInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
@@ -74,6 +75,14 @@ export function useSetSalePrintStatus() {
   return useMutation({
     mutationFn: (p: { id: string; status: 'pending' | 'printed' | 'failed' }) =>
       repo.setSalePrintStatus(p.id, p.status),
+    onSuccess: () => invalidate([['sales']]),
+  });
+}
+
+export function useAssignSaleCustomer() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: (input: AssignSaleCustomerInput) => repo.assignSaleCustomer(input),
     onSuccess: () => invalidate([['sales']]),
   });
 }

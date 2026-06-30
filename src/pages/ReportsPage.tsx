@@ -11,13 +11,15 @@ import { formatMoney, round2 } from '@/domain/money';
 import { summarizeSales } from '@/domain/sales';
 import { daysAgo, formatDateTime, formatTime, startOfToday } from '@/lib/format';
 import { PAYMENT_LABELS } from '@/domain/payments';
-import { PageHeader, cn } from '@/components/ui';
+import { PageHeader, cn, inputClass } from '@/components/ui';
 import { getPrinterService } from '@/lib/printing';
 
-type Range = 'today' | 'yesterday' | 'week' | 'month' | 'all';
+type Range = 'today' | 'yesterday' | 'week' | 'month' | 'custom' | 'all';
 
 export function ReportsPage() {
   const [range, setRange] = useState<Range>('today');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const { data: products = [] } = useProducts();
   const { data: categories = [] } = useCategories();
   const { data: settings } = useSettings();
@@ -26,9 +28,11 @@ export function ReportsPage() {
     : range === 'yesterday' ? { from: daysAgo(1), to: startOfToday() }
     : range === 'week' ? { from: daysAgo(7) }
     : range === 'month' ? { from: daysAgo(30) }
+    : range === 'custom' ? { from: startOfLocalDate(fromDate), to: endOfLocalDate(toDate) }
     : {};
   const { data: sales = [] } = useSales(filter);
   const summary = useMemo(() => summarizeSales(sales), [sales]);
+  const periodLabel = rangeLabel(range, fromDate, toDate);
 
   const costOf = useMemo(() => {
     const map = new Map<string, number>();
@@ -109,10 +113,18 @@ export function ReportsPage() {
       } />
 
       <div className="border-b border-slate-200 bg-white px-6 py-3">
-        <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
-          {([['today', 'Hoy'], ['yesterday', 'Ayer'], ['week', '7 días'], ['month', '30 días'], ['all', 'Todo']] as [Range, string][]).map(([r, label]) => (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+          {([['today', 'Hoy'], ['yesterday', 'Ayer'], ['week', '7 días'], ['month', '30 días'], ['custom', 'Desde/Hasta'], ['all', 'Todo']] as [Range, string][]).map(([r, label]) => (
             <button key={r} onClick={() => setRange(r)} className={cn('rounded-lg px-4 py-1.5 text-sm font-semibold', range === r ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500')}>{label}</button>
           ))}
+          </div>
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <span>Desde</span>
+            <input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setRange('custom'); }} className={`${inputClass} h-9 w-40`} />
+            <span>Hasta</span>
+            <input type="date" value={toDate} onChange={(e) => { setToDate(e.target.value); setRange('custom'); }} className={`${inputClass} h-9 w-40`} />
+          </div>
         </div>
       </div>
 
@@ -183,12 +195,12 @@ export function ReportsPage() {
           </Card>
         </div>
       </div>
-      {settings && <DailyReportPrint settings={settings} range={range} sales={sales} />}
+      {settings && <DailyReportPrint settings={settings} periodLabel={periodLabel} sales={sales} />}
     </div>
   );
 }
 
-function DailyReportPrint({ settings, range, sales }: { settings: Settings; range: Range; sales: Sale[] }) {
+function DailyReportPrint({ settings, periodLabel, sales }: { settings: Settings; periodLabel: string; sales: Sale[] }) {
   const valid = sales.filter((s) => s.status !== 'cancelled');
   const summary = summarizeSales(sales);
   const byPayment = valid.reduce<Record<PaymentMethod, number>>((acc, sale) => {
@@ -204,7 +216,7 @@ function DailyReportPrint({ settings, range, sales }: { settings: Settings; rang
       <p className="text-center text-base font-bold">INFORME DIARIO</p>
       <p className="text-center">{settings.storeName}</p>
       <p className="text-center">{settings.legalName} · {settings.taxId}</p>
-      <p className="text-center">Periodo: {rangeLabel(range)}</p>
+      <p className="text-center">Periodo: {periodLabel}</p>
       <p className="text-center">Emitido: {formatDateTime(new Date().toISOString())}</p>
       <PrintDivider />
       <PrintRow k="Ventas brutas" v={formatMoney(summary.gross)} />
@@ -231,9 +243,31 @@ function DailyReportPrint({ settings, range, sales }: { settings: Settings; rang
   );
 }
 
-function rangeLabel(range: Range): string {
-  const labels: Record<Range, string> = { today: 'Hoy', yesterday: 'Ayer', week: '7 días', month: '30 días', all: 'Todo' };
+function rangeLabel(range: Range, fromDate = '', toDate = ''): string {
+  if (range === 'custom') {
+    if (fromDate && toDate) return `${formatInputDate(fromDate)} - ${formatInputDate(toDate)}`;
+    if (fromDate) return `Desde ${formatInputDate(fromDate)}`;
+    if (toDate) return `Hasta ${formatInputDate(toDate)}`;
+    return 'Desde/Hasta';
+  }
+  const labels: Record<Exclude<Range, 'custom'>, string> = { today: 'Hoy', yesterday: 'Ayer', week: '7 días', month: '30 días', all: 'Todo' };
   return labels[range];
+}
+
+function startOfLocalDate(value: string): string | undefined {
+  if (!value) return undefined;
+  const d = new Date(`${value}T00:00:00`);
+  return d.toISOString();
+}
+
+function endOfLocalDate(value: string): string | undefined {
+  if (!value) return undefined;
+  const d = new Date(`${value}T23:59:59.999`);
+  return d.toISOString();
+}
+
+function formatInputDate(value: string): string {
+  return value.split('-').reverse().join('/');
 }
 
 function PrintDivider() {

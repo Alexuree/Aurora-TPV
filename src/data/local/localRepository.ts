@@ -24,6 +24,7 @@ import { uid } from '@/lib/uid';
 import { seedCategories, seedProducts, seedSettings, seedUsers } from '@/data/seed';
 import type {
   CancelSaleInput,
+  AssignSaleCustomerInput,
   CashMovementInput,
   CloseCashInput,
   OpenCashInput,
@@ -312,6 +313,34 @@ export class LocalRepository implements Repository {
 
   async getSale(id: UUID): Promise<Sale | null> {
     return ok(read<Sale[]>(K.sales, []).find((s) => s.id === id) ?? null);
+  }
+
+  async assignSaleCustomer(input: AssignSaleCustomerInput): Promise<Sale> {
+    const sales = read<Sale[]>(K.sales, []);
+    const sale = sales.find((s) => s.id === input.saleId);
+    if (!sale) throw new Error('Venta no encontrada');
+    if (sale.status === 'cancelled') throw new Error('No se puede facturar un ticket anulado');
+
+    const settings = { ...seedSettings, ...read<Partial<Settings>>(K.settings, {}) };
+    const invoiceType = invoiceTypeForSale(settings, Boolean(input.customerSnapshot?.taxId));
+    const series = seriesForInvoice(settings, invoiceType);
+
+    sale.customerId = input.customerId;
+    sale.customerName = input.customerName || 'Cliente mostrador';
+    sale.customerSnapshot = input.customerSnapshot ?? null;
+    sale.invoiceType = invoiceType;
+    sale.series = series;
+    sale.fiscalNumber = `${series}-${sale.number}`;
+    sale.fiscalHash = await sha256Hex(fiscalHashPayload(sale));
+    write(K.sales, sales);
+    this.audit('sale_customer_assigned', {
+      userId: input.userId,
+      userName: input.userName,
+      entity: 'sale',
+      entityId: sale.id,
+      details: { number: sale.number, customerId: input.customerId, invoiceType, fiscalNumber: sale.fiscalNumber },
+    });
+    return ok(sale);
   }
 
   async setSalePrintStatus(saleId: UUID, status: 'pending' | 'printed' | 'failed'): Promise<void> {

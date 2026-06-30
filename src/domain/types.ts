@@ -217,6 +217,8 @@ export interface Sale {
   fiscalMode?: FiscalMode;
   previousFiscalHash?: string | null;
   fiscalHash?: string;
+  /** Solo modo Supabase offline: venta guardada temporalmente pendiente de envio. */
+  syncStatus?: 'pending';
 }
 
 /* --------------------------- Anulaciones --------------------------- */
@@ -301,6 +303,7 @@ export interface Settings {
 
 export type AuditEventType =
   | 'sale_created'
+  | 'sale_customer_assigned'
   | 'sale_cancelled'
   | 'cash_opened'
   | 'cash_closed'

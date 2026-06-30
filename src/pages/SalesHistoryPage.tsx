@@ -1,16 +1,18 @@
 // Historial de ventas con filtros por fecha y búsqueda. Ver/imprimir recibo.
 
 import { useState } from 'react';
-import { Ban, Eye, Printer, RotateCw, Search } from 'lucide-react';
-import type { Sale, SaleStatus } from '@/domain/types';
-import { useSales, useSetSalePrintStatus, useSettings } from '@/hooks/data';
+import { Ban, Eye, Printer, RotateCw, Search, UserRound } from 'lucide-react';
+import type { Customer, Sale, SaleStatus } from '@/domain/types';
+import { useAssignSaleCustomer, useSales, useSetSalePrintStatus, useSettings } from '@/hooks/data';
 import { useAuth } from '@/store/authStore';
+import { snapshotFromCustomer } from '@/domain/customers';
 import { formatMoney } from '@/domain/money';
 import { formatDateTime, daysAgo, startOfToday } from '@/lib/format';
 import { getPrinterService } from '@/lib/printing';
 import { Badge, Button, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
 import { Receipt } from '@/components/pos/Receipt';
 import { CancelTicketModal } from '@/components/pos/CancelTicketModal';
+import { CustomerPickerModal } from '@/components/pos/CustomerPickerModal';
 
 const STATUS: Record<SaleStatus, { label: string; color: string }> = {
   completed: { label: 'Completada', color: 'green' },
@@ -26,9 +28,12 @@ export function SalesHistoryPage() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Sale | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Sale | null>(null);
+  const [customerTarget, setCustomerTarget] = useState<Sale | null>(null);
   const { data: settings } = useSettings();
   const setPrintStatus = useSetSalePrintStatus();
+  const assignCustomer = useAssignSaleCustomer();
   const can = useAuth((s) => s.can);
+  const user = useAuth((s) => s.user);
 
   const filter = range === 'today' ? { from: startOfToday() } : range === 'week' ? { from: daysAgo(7) } : {};
   const { data: sales = [], isLoading } = useSales({ ...filter, search: search || undefined });
@@ -39,6 +44,20 @@ export function SalesHistoryPage() {
   const printTicket = async (s: Sale) => {
     const res = await getPrinterService().print();
     setPrintStatus.mutate({ id: s.id, status: res.ok ? 'printed' : 'failed' });
+  };
+
+  const assignCustomerToSale = async (customer: Customer | null) => {
+    if (!customerTarget) return;
+    const updated = await assignCustomer.mutateAsync({
+      saleId: customerTarget.id,
+      userId: user?.id,
+      userName: user?.fullName,
+      customerId: customer?.id ?? null,
+      customerName: customer?.name ?? 'Cliente mostrador',
+      customerSnapshot: customer ? snapshotFromCustomer(customer) : null,
+    });
+    setCustomerTarget(null);
+    setSelected(updated);
   };
 
   // Solo se puede anular: con permiso de venta, no anulada y del día actual.
@@ -97,8 +116,24 @@ export function SalesHistoryPage() {
                     <td className="px-4 py-3 text-slate-600">{s.customerName}</td>
                     <td className="px-4 py-3 text-slate-500">{s.cashierName}</td>
                     <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-800">{formatMoney(s.total)}</td>
-                    <td className="px-4 py-3 text-center"><Badge color={STATUS[s.status].color}>{STATUS[s.status].label}</Badge></td>
-                    <td className="px-4 py-3 text-right"><Eye className="text-slate-300" size={18} /></td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex justify-center gap-1">
+                        <Badge color={STATUS[s.status].color}>{STATUS[s.status].label}</Badge>
+                        {s.syncStatus === 'pending' && <Badge color="amber">Pendiente envío</Badge>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {s.status !== 'cancelled' && (
+                        <button
+                          title="Asignar cliente"
+                          onClick={(e) => { e.stopPropagation(); setCustomerTarget(s); }}
+                          className="mr-2 rounded-lg p-1 text-slate-300 hover:bg-slate-100 hover:text-slate-600"
+                        >
+                          <UserRound size={18} />
+                        </button>
+                      )}
+                      <Eye className="inline text-slate-300" size={18} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -115,6 +150,11 @@ export function SalesHistoryPage() {
                 <Ban size={16} /> Anular
               </Button>
             )}
+            {selected.status !== 'cancelled' && (
+              <Button variant="outline" className="flex-1" onClick={() => setCustomerTarget(selected)} disabled={assignCustomer.isPending}>
+                <UserRound size={16} /> Cliente
+              </Button>
+            )}
             <Button variant="outline" className="flex-1" onClick={() => printTicket(selected)}><Printer size={18} /> Imprimir</Button>
           </div>
         }>
@@ -124,6 +164,10 @@ export function SalesHistoryPage() {
 
       {cancelTarget && (
         <CancelTicketModal sale={cancelTarget} onClose={() => setCancelTarget(null)} onCancelled={() => setCancelTarget(null)} />
+      )}
+
+      {customerTarget && (
+        <CustomerPickerModal onClose={() => setCustomerTarget(null)} onSelect={(customer) => void assignCustomerToSale(customer)} />
       )}
     </div>
   );
