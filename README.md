@@ -130,3 +130,83 @@ cambiar de almacenamiento o reutilizar la lógica sin tocar la interfaz.
 - **Usuarios:** roles Administrador / Encargado / Dependiente con permisos.
 
 Consulta [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) para el diseño completo.
+
+---
+
+## 6. Impresión térmica ESC/POS y cajón registrador
+
+La app de **escritorio** (Electron) imprime tickets reales en impresoras
+térmicas ESC/POS y abre el **cajón registrador** conectado a la impresora.
+No usa el diálogo del navegador como sistema principal: genera los bytes
+ESC/POS y los envía por IPC seguro (`window.pos`) sin dependencias nativas.
+
+### Arquitectura
+
+```
+Renderer (React)                 Main (Electron, electron/)
+  hooks/pos.ts ─┐                 ipc/printerIpc.cjs  (handlers pos:*)
+  lib/printing  ├─ window.pos ──▶ services/printerService.cjs (transportes)
+  (payload)     ┘                 services/cashDrawerService.cjs
+                                   escpos/escpos.cjs  (bytes ESC/POS)
+```
+
+- El **renderer** construye el ticket como objeto plano (`buildReceiptPayload`)
+  y pasa la `PrinterConfig` en cada llamada. El **main es stateless**.
+- El renderer **nunca** toca `ipcRenderer`: solo la API acotada `window.pos`.
+- Toda impresión/apertura queda registrada (`print_jobs`, `cash_drawer_events`,
+  `audit_events`) y es consultable en **Auditoría** (solo administración).
+
+### Comandos de escritorio
+
+```bash
+npm run app:dev      # Vite + ventana Electron (desarrollo)
+npm run app:start    # build + ventana Electron
+npm run app:build    # genera dist-app/Aurora TPV-win32-x64/Aurora TPV.exe
+```
+
+> En `npm run dev` (navegador) **no** hay acceso al hardware: las pruebas y la
+> impresión ESC/POS requieren la app de escritorio. La venta no se bloquea: el
+> ticket queda `pendiente` y puede imprimirse desde el diálogo del sistema.
+
+### Configurar una impresora térmica **USB**
+
+1. Instala el **driver de Windows** de la impresora (Epson/Bixolon/genérica).
+   Debe aparecer en *Configuración → Impresoras y escáneres*.
+2. En la app: **Ajustes → Impresora y cajón** (`/ajustes/impresora`).
+3. Tipo de conexión: **Impresora de Windows (USB/instalada)**.
+4. Pulsa el botón de refrescar y **selecciona tu impresora** de la lista.
+5. Ajusta ancho de papel (58/80 mm), corte automático y copias. **Guardar**.
+6. Pulsa **Probar ticket** y **Ticket completo** para validar.
+
+### Configurar una impresora **de red (Ethernet/Wi-Fi)**
+
+1. Anota la **IP** de la impresora (suele imprimir un test al encender).
+2. Tipo de conexión: **Red (IP / Ethernet)**.
+3. Introduce **IP** y **puerto** (`9100` por defecto). **Guardar** y **Probar**.
+
+### Configurar y probar el **cajón registrador**
+
+1. Conecta el cajón por **RJ11** a la impresora (no va al PC directamente).
+2. En **Ajustes → Impresora y cajón**, elige el **pin** (normalmente `2`; en
+   algunos modelos `5`) y activa *Abrir cajón en ventas en efectivo*.
+3. Pulsa **Probar cajón**. En cada venta en efectivo se abre automáticamente.
+4. Apertura manual con motivo desde **Caja → Abrir cajón** (queda auditada).
+
+### Migración de base de datos
+
+Modo Supabase: ejecuta `supabase/migrations/0011_pos_printing_cash_drawer.sql`
+(o el `supabase/setup.sql` completo, que ya lo incluye).
+
+### Limitaciones conocidas
+
+- **Solo Windows** probado (descubrimiento de impresoras vía PowerShell;
+  transporte serie vía `cmd`). Linux/macOS quedan pendientes.
+- **Logo raster** y **QR** son opcionales; el QR se imprime si la impresora lo
+  soporta. El logo raster no está implementado en v1 (se imprime el nombre).
+- Codificación `cp858`/`cp850` aproximada con `latin1` (sin `iconv`):
+  caracteres fuera de Latin-1 pueden no imprimirse correctamente.
+- Sin permisos nuevos: reimpresión y apertura manual del cajón requieren el
+  permiso `open_close_cash` (en esta instalación lo tienen admin, encargado **y
+  dependiente**). Todo queda registrado en auditoría.
+- Sin pruebas de hardware automatizadas: los tests cubren los **bytes** ESC/POS
+  y la lógica; valida con una impresora real desde *Probar ticket*.

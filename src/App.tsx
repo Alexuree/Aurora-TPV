@@ -18,6 +18,7 @@ import { ReportsPage } from '@/pages/ReportsPage';
 import { UsersPage } from '@/pages/UsersPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { SettingsPrinterPage } from '@/pages/SettingsPrinterPage';
+import { AuditPage } from '@/pages/AuditPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,6 +60,7 @@ export function App() {
             <Route path="usuarios" element={<RequirePermission permission="manage_users"><UsersPage /></RequirePermission>} />
             <Route path="ajustes" element={<RequirePermission permission="manage_settings"><SettingsPage /></RequirePermission>} />
             <Route path="ajustes/impresora" element={<RequirePermission permission="manage_settings"><SettingsPrinterPage /></RequirePermission>} />
+            <Route path="auditoria" element={<RequirePermission permission="manage_settings"><AuditPage /></RequirePermission>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

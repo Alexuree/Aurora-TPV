@@ -6,6 +6,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { repo } from '@/data';
 import type {
+  AuditFilter,
   CancelSaleInput,
   AssignSaleCustomerInput,
   CashMovementInput,
@@ -53,6 +54,8 @@ export const useProductPriceHistory = (productId?: string) =>
     queryFn: () => repo.listPriceHistory(productId!),
     enabled: !!productId,
   });
+export const useAuditEvents = (filter?: AuditFilter) =>
+  useQuery({ queryKey: ['audit', filter ?? {}], queryFn: () => repo.listAuditEvents(filter) });
 
 /* ---------------------------- Mutations ------------------------------- */
 
