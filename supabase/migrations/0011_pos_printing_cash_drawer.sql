@@ -17,7 +17,7 @@ create table if not exists printer_config (
   serial_port text,
   baud_rate int default 9600,
   paper_width text not null default '80' check (paper_width in ('58','80')),
-  encoding text not null default 'cp858' check (encoding in ('cp858','cp850','utf8')),
+  encoding text not null default 'cp858' check (encoding in ('cp858','wpc1252','cp850','utf8')),
   drawer_pin int not null default 2 check (drawer_pin in (2,5)),
   auto_cut boolean not null default true,
   open_drawer_on_cash_sale boolean not null default true,

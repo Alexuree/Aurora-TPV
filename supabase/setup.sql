@@ -798,7 +798,7 @@ create table if not exists printer_config (
   serial_port text,
   baud_rate int default 9600,
   paper_width text not null default '80' check (paper_width in ('58','80')),
-  encoding text not null default 'cp858' check (encoding in ('cp858','cp850','utf8')),
+  encoding text not null default 'cp858' check (encoding in ('cp858','wpc1252','cp850','utf8')),
   drawer_pin int not null default 2 check (drawer_pin in (2,5)),
   auto_cut boolean not null default true,
   open_drawer_on_cash_sale boolean not null default true,
@@ -811,6 +811,10 @@ create table if not exists printer_config (
   updated_at timestamptz not null default now()
 );
 insert into printer_config (id) values ('default') on conflict (id) do nothing;
+-- Amplía la lista de codificaciones admitidas en bases ya creadas (idempotente).
+alter table printer_config drop constraint if exists printer_config_encoding_check;
+alter table printer_config add constraint printer_config_encoding_check
+  check (encoding in ('cp858','wpc1252','cp850','utf8'));
 alter table printer_config enable row level security;
 drop policy if exists p_all_printer_config on printer_config;
 create policy p_all_printer_config on printer_config for all to authenticated using (true) with check (true);

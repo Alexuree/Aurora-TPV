@@ -341,7 +341,7 @@ export interface AuditEvent {
 export type PrinterConnectionType = 'usb' | 'network' | 'serial' | 'windows-printer';
 
 /** Codificación de caracteres enviada a la impresora. */
-export type PrinterEncoding = 'cp858' | 'cp850' | 'utf8';
+export type PrinterEncoding = 'cp858' | 'wpc1252' | 'cp850' | 'utf8';
 
 /** Pin del conector RJ11 del cajón (estándar ESC/POS). */
 export type DrawerPin = 2 | 5;

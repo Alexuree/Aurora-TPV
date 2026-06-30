@@ -19,8 +19,9 @@ const CONNECTION_LABELS: Record<PrinterConnectionType, string> = {
 };
 
 const ENCODING_LABELS: Record<PrinterEncoding, string> = {
-  cp858: 'CP858 (Europa occidental, €)',
-  cp850: 'CP850 (MS-DOS Latin-1)',
+  cp858: 'CP858 + € dibujado (recomendada)',
+  wpc1252: 'WPC1252 + € dibujado (alternativa)',
+  cp850: 'CP850 (sin dibujar: imprime "EUR")',
   utf8: 'UTF-8',
 };
 
@@ -142,6 +143,11 @@ export function SettingsPrinterPage() {
                 <Field label="Copias por ticket"><input type="number" min={1} max={5} className={inputClass} value={form.copies} onChange={(e) => set('copies', Math.max(1, parseInt(e.target.value) || 1))} /></Field>
                 <Toggle label="Cortar papel automáticamente" checked={form.autoCut} onChange={(v) => set('autoCut', v)} />
                 <Toggle label="Imprimir QR fiscal" checked={form.printQr} onChange={(v) => set('printQr', v)} />
+                <p className="col-span-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  Con <strong>CP858</strong> o <strong>WPC1252</strong> el símbolo <strong>€</strong> se <strong>dibuja</strong> como
+                  gráfico, así que sale correcto aunque tu impresora no lo tenga en su tabla. Si aun así apareciera mal,
+                  usa <strong>CP850</strong> y se imprimirá «EUR» como texto (100% compatible).
+                </p>
               </div>
             </section>
 

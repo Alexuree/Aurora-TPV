@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 // El builder ESC/POS es CommonJS (.cjs), compartido con el proceso de Electron.
 import escpos from './escpos.cjs';
 
-const { buildReceiptBytes, drawerKick, cut, padLine, separator, formatEuro, lineWidth, encodeText, codePageCommand } =
-  escpos as any;
+const {
+  buildReceiptBytes, drawerKick, cut, padLine, separator, formatEuro, lineWidth, encodeText,
+  codePageCommand, buildEuroDefinition, usesGraphicEuro,
+} = escpos as any;
 
 const store = { name: 'Aurora', address: 'C/ Mayor 12', phone: '910', footer: 'Gracias' };
 const sale = {
@@ -83,9 +85,21 @@ describe('escpos low-level', () => {
     expect(encodeText('·', 'cp858')[0]).toBe(0xfa);
   });
 
-  it('encodeText: euro 0xD5 en cp858, "EUR" en cp850', () => {
-    expect(encodeText('€', 'cp858')[0]).toBe(0xd5);
-    expect([...encodeText('€', 'cp850')]).toEqual([0x45, 0x55, 0x52]); // EUR
+  it('encodeText: € se dibuja como gráfico en cp858/wpc1252, "EUR" en cp850', () => {
+    // cp858/wpc1252: ESC % 1 + carácter de usuario (0x7E) + ESC % 0.
+    const euroSeq = [0x1b, 0x25, 0x01, 0x7e, 0x1b, 0x25, 0x00];
+    expect([...encodeText('€', 'cp858')]).toEqual(euroSeq);
+    expect([...encodeText('€', 'wpc1252')]).toEqual(euroSeq);
+    // cp850 no dibuja: imprime "EUR" como texto.
+    expect([...encodeText('€', 'cp850')]).toEqual([0x45, 0x55, 0x52]);
+  });
+
+  it('encodeText WPC1252: acentos en bytes latin1', () => {
+    expect(encodeText('á', 'wpc1252')[0]).toBe(0xe1);
+    expect(encodeText('ñ', 'wpc1252')[0]).toBe(0xf1);
+    expect(encodeText('Ñ', 'wpc1252')[0]).toBe(0xd1);
+    expect(encodeText('ü', 'wpc1252')[0]).toBe(0xfc);
+    expect(encodeText('A', 'wpc1252')[0]).toBe(0x41); // ASCII directo
   });
 
   it('encodeText degrada comillas/guiones tipográficos a ASCII', () => {
@@ -95,10 +109,24 @@ describe('escpos low-level', () => {
     expect(encodeText('☃', 'cp858')[0]).toBe(0x3f);
   });
 
-  it('codePageCommand: ESC t 19 (PC858) por defecto, ESC t 2 (PC850)', () => {
+  it('codePageCommand: 19 (PC858), 16 (WPC1252), 2 (PC850)', () => {
     expect([...codePageCommand('cp858')]).toEqual([0x1b, 0x74, 19]);
+    expect([...codePageCommand('wpc1252')]).toEqual([0x1b, 0x74, 16]);
     expect([...codePageCommand('cp850')]).toEqual([0x1b, 0x74, 2]);
     expect([...codePageCommand('utf8')]).toEqual([]); // utf8 no usa página de códigos
+  });
+
+  it('buildEuroDefinition: ESC & 3 0x7E 0x7E 12 + 36 bytes de datos', () => {
+    const def = buildEuroDefinition();
+    expect([def[0], def[1], def[2], def[3], def[4], def[5]]).toEqual([0x1b, 0x26, 3, 0x7e, 0x7e, 12]);
+    expect(def.length).toBe(6 + 12 * 3); // cabecera + 12 columnas × 3 bytes
+  });
+
+  it('usesGraphicEuro solo en cp858/wpc1252', () => {
+    expect(usesGraphicEuro('cp858')).toBe(true);
+    expect(usesGraphicEuro('wpc1252')).toBe(true);
+    expect(usesGraphicEuro('cp850')).toBe(false);
+    expect(usesGraphicEuro('utf8')).toBe(false);
   });
 });
 
@@ -112,9 +140,24 @@ describe('buildReceiptBytes', () => {
     expect(Buffer.isBuffer(buf)).toBe(true);
   });
 
-  it('el euro del total se codifica como 0xD5 (PC858)', () => {
+  it('define el € como carácter gráfico (ESC &) y lo imprime (ESC % 1)', () => {
     const buf = buildReceiptBytes({ type: 'ORIGINAL', store, sale }, { paperWidth: '80', autoCut: true });
-    expect(buf.includes(0xd5)).toBe(true);
+    // ESC & (0x1b,0x26) define el glifo del euro tras el INIT.
+    expect(indexOfSeq(buf, [0x1b, 0x26])).toBeGreaterThan(-1);
+    // El total contiene el € → se imprime con ESC % 1 + 0x7E.
+    expect(indexOfSeq(buf, [0x1b, 0x25, 0x01, 0x7e])).toBeGreaterThan(-1);
+  });
+
+  it('no trunca nombres largos en 58mm: los envuelve íntegros', () => {
+    const longSale = {
+      ...sale,
+      items: [{ quantity: 1, name: 'Colonia estandar 50 ml', discountPct: 0, lineTotal: 12.5 }],
+    };
+    const buf = buildReceiptBytes({ type: 'ORIGINAL', store, sale: longSale }, { paperWidth: '58', autoCut: true });
+    const text = buf.toString('latin1');
+    // El nombre completo aparece (antes se perdía la última "l" de "ml").
+    expect(text).toContain('Colonia estandar 50 ml');
+    expect(text).toContain('12,50'); // y el precio sigue imprimiéndose
   });
 
   it('incluye corte cuando autoCut es true', () => {

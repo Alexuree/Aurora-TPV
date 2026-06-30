@@ -88,6 +88,18 @@ const CP850 = {
 /** CP858 = CP850 + euro en 0xD5 (página recomendada por defecto). */
 const CP858 = { ...CP850, '€': 0xd5 };
 
+/**
+ * Caracteres especiales de Windows-1252 (WPC1252) en el rango 0x80–0x9F.
+ * Lo importante para nosotros: el euro está en 0x80, página muy soportada
+ * por las térmicas genéricas que no implementan bien PC858.
+ */
+const WIN1252_SPECIALS = {
+  '€': 0x80, '‚': 0x82, 'ƒ': 0x83, '„': 0x84, '…': 0x85, '†': 0x86, '‡': 0x87, 'ˆ': 0x88,
+  '‰': 0x89, 'Š': 0x8a, '‹': 0x8b, 'Œ': 0x8c, 'Ž': 0x8e, '‘': 0x91, '’': 0x92, '“': 0x93,
+  '”': 0x94, '•': 0x95, '–': 0x96, '—': 0x97, '˜': 0x98, '™': 0x99, 'š': 0x9a, '›': 0x9b,
+  'œ': 0x9c, 'ž': 0x9e, 'Ÿ': 0x9f,
+};
+
 /** Sustitutos ASCII para caracteres no representables (comillas, guiones…). */
 const ASCII_FALLBACK = {
   '‘': "'", '’': "'", '‚': "'", '‛': "'",
@@ -100,32 +112,92 @@ const ASCII_FALLBACK = {
 /** Página de códigos a seleccionar en la impresora (ESC t n). */
 function codePageCommand(encoding) {
   if (encoding === 'utf8') return Buffer.alloc(0);
-  const n = encoding === 'cp850' ? 2 : 19; // 19 = PC858 (con €), 2 = PC850
+  // 16 = WPC1252 (€ en 0x80), 2 = PC850 (sin €), 19 = PC858 (€ en 0xD5).
+  const n = encoding === 'wpc1252' ? 16 : encoding === 'cp850' ? 2 : 19;
   return Buffer.from([ESC, 0x74, n]);
+}
+
+/** Quita diacríticos; devuelve byte ASCII o 0x3f ('?') si no es posible. */
+function asciiFallbackByte(ch) {
+  const stripped = ch.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const c0 = stripped.charCodeAt(0);
+  return stripped && c0 < 0x80 ? c0 : 0x3f;
+}
+
+/* --------------------------- Euro como gráfico --------------------- */
+// Muchas térmicas genéricas no tienen € en ninguna página de códigos
+// accesible (se quedan en PC850). Para que el símbolo SIEMPRE salga, se
+// define como carácter de usuario (ESC &) y se imprime activando el juego
+// de usuario solo alrededor del euro (ESC % 1 … ESC % 0). Ocupa una celda
+// normal, así que la alineación de importes no cambia.
+
+/** Mapa de bits del € (24 filas × 12 columnas) para fuente A 12×24. */
+const EURO_GLYPH = [
+  '............', '....######..', '..########..', '..##....##..',
+  '.##.........', '.##.........', '.##.........', '.##.........',
+  '########....', '########....', '.##.........', '.##.........',
+  '######......', '######......', '.##.........', '.##.........',
+  '.##.........', '.##.........', '..##....##..', '..########..',
+  '....######..', '............', '............', '............',
+];
+
+const EURO_CODE = 0x7e; // se redefine '~' (nunca lo imprimimos como texto)
+
+/** Comando ESC & que define el glifo del € en el carácter EURO_CODE. */
+function buildEuroDefinition() {
+  const width = 12;
+  const vbytes = 3; // 24 puntos de alto = 3 bytes verticales
+  const data = [];
+  for (let x = 0; x < width; x++) {
+    for (let b = 0; b < vbytes; b++) {
+      let byte = 0;
+      for (let bit = 0; bit < 8; bit++) {
+        const row = b * 8 + bit;
+        if (row < EURO_GLYPH.length && EURO_GLYPH[row][x] === '#') byte |= 0x80 >> bit;
+      }
+      data.push(byte);
+    }
+  }
+  return Buffer.from([ESC, 0x26, vbytes, EURO_CODE, EURO_CODE, width, ...data]);
+}
+
+/** Secuencia para imprimir el € (activa el juego de usuario solo para él). */
+const EURO_PRINT = [ESC, 0x25, 0x01, EURO_CODE, ESC, 0x25, 0x00];
+
+/** ¿La codificación dibuja el € como gráfico (compatible con todas)? */
+function usesGraphicEuro(encoding) {
+  return encoding === 'cp858' || encoding === 'wpc1252';
 }
 
 /**
  * Codifica texto a bytes en la página de códigos indicada (cp858 por
- * defecto). ASCII pasa directo; los acentos/€/ñ se mapean a su byte real;
- * comillas y guiones tipográficos degradan a ASCII; lo desconocido se
- * normaliza quitando tildes o cae a '?'.
+ * defecto). ASCII pasa directo; los acentos/ñ se mapean a su byte real; el
+ * € se dibuja (cp858/wpc1252) o se sustituye por "EUR" (cp850); comillas y
+ * guiones tipográficos degradan a ASCII; lo desconocido cae a '?'.
  */
 function encodeText(text, encoding) {
   const value = text == null ? '' : String(text);
   if (encoding === 'utf8') return Buffer.from(value, 'utf8');
+  const graphicEuro = usesGraphicEuro(encoding);
+  const win = encoding === 'wpc1252';
   const table = encoding === 'cp850' ? CP850 : CP858;
   const bytes = [];
   for (const ch of value) {
+    if (graphicEuro && ch === '€') { for (const b of EURO_PRINT) bytes.push(b); continue; }
     const code = ch.codePointAt(0);
     if (code < 0x80) { bytes.push(code); continue; } // ASCII directo
+    if (win) {
+      const sp = WIN1252_SPECIALS[ch];
+      if (sp != null) { bytes.push(sp); continue; }
+      if (code <= 0xff) { bytes.push(code); continue; } // 0xA0–0xFF = latin1
+      bytes.push(asciiFallbackByte(ch));
+      continue;
+    }
     const mapped = table[ch];
     if (mapped != null) { bytes.push(mapped); continue; }
     const fb = ASCII_FALLBACK[ch];
     if (fb != null) { for (let i = 0; i < fb.length; i++) bytes.push(fb.charCodeAt(i)); continue; }
-    // Último recurso: quitar diacríticos; si sigue sin ser ASCII → '?'.
-    const stripped = ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const c0 = stripped.charCodeAt(0);
-    bytes.push(stripped && c0 < 0x80 ? c0 : 0x3f);
+    bytes.push(asciiFallbackByte(ch)); // último recurso
   }
   return Buffer.from(bytes);
 }
@@ -158,21 +230,50 @@ function separator(width) {
   return '-'.repeat(width);
 }
 
-/** Envuelve un texto largo en varias líneas del ancho dado. */
+/** Envuelve un texto largo en varias líneas del ancho dado (sin perder texto). */
 function wrap(text, width) {
-  const words = String(text ?? '').split(/\s+/).filter(Boolean);
   const lines = [];
   let current = '';
-  for (const w of words) {
+  const flush = () => { if (current) { lines.push(current); current = ''; } };
+  for (let w of String(text ?? '').split(/\s+/).filter(Boolean)) {
+    // Parte palabras más largas que el ancho en trozos completos.
+    while (w.length > width) {
+      flush();
+      lines.push(w.slice(0, width));
+      w = w.slice(width);
+    }
     if (current.length + w.length + (current ? 1 : 0) > width) {
-      if (current) lines.push(current);
-      current = w.length > width ? w.slice(0, width) : w;
+      flush();
+      current = w;
     } else {
       current = current ? `${current} ${w}` : w;
     }
   }
-  if (current) lines.push(current);
+  flush();
   return lines.length ? lines : [''];
+}
+
+/**
+ * Imprime "nombre ......... precio". Si no caben en una línea, el nombre se
+ * envuelve en líneas completas (sin truncar) y el precio se alinea a la
+ * derecha en la última línea, o en su propia línea si tampoco cabe ahí.
+ */
+function printItemLine(line, name, price, width) {
+  const p = String(price ?? '');
+  const n = String(name ?? '');
+  if (n.length + p.length + 1 <= width) {
+    line(padLine(n, p, width));
+    return;
+  }
+  const nameLines = wrap(n, width);
+  for (let i = 0; i < nameLines.length - 1; i++) line(nameLines[i]);
+  const last = nameLines[nameLines.length - 1];
+  if (last.length + p.length + 1 <= width) {
+    line(padLine(last, p, width));
+  } else {
+    line(last);
+    line(padLine('', p, width));
+  }
 }
 
 /* --------------------------- Comandos físicos ---------------------- */
@@ -280,6 +381,9 @@ function buildReceiptBytes(payload, config) {
   // Selecciona la página de códigos en la impresora (ESC t n) para que
   // interprete bien €, tildes y ñ. Debe ir DESPUÉS del INIT (ESC @ resetea).
   out(codePageCommand(enc));
+  // Define el € como carácter gráfico cuando la codificación lo dibuja
+  // (cp858/wpc1252): así sale aunque la impresora no tenga euro en su tabla.
+  if (usesGraphicEuro(enc)) out(buildEuroDefinition());
 
   // --- Marca de COPIA ---
   if (isCopy) {
@@ -337,8 +441,7 @@ function buildReceiptBytes(payload, config) {
   // --- Líneas de producto ---
   sep();
   for (const it of sale.items || []) {
-    const name = `${it.quantity}x ${it.name}`;
-    line(padLine(name, formatEuro(it.lineTotal), width));
+    printItemLine(line, `${it.quantity}x ${it.name}`, formatEuro(it.lineTotal), width);
     if (it.discountPct > 0) line(`   dto. ${it.discountPct}%`);
   }
 
@@ -460,12 +563,17 @@ module.exports = {
   lineWidth,
   encodeText,
   codePageCommand,
+  usesGraphicEuro,
+  buildEuroDefinition,
+  EURO_PRINT,
+  EURO_CODE,
   CP850,
   CP858,
   formatEuro,
   padLine,
   separator,
   wrap,
+  printItemLine,
   drawerKick,
   cut,
   qrBytes,
