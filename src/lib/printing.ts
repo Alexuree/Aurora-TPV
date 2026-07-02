@@ -9,7 +9,7 @@
 // =====================================================================
 
 import type { IvaRate, PrinterConfig, Sale, Settings, TicketWidth } from '@/domain/types';
-import type { ReceiptCustomerPayload, ReceiptPayload, ReceiptTaxRow } from '@/electron';
+import type { ClosingPayload, ReceiptCustomerPayload, ReceiptPayload, ReceiptStorePayload, ReceiptTaxRow } from '@/electron';
 import { round2 } from '@/domain/money';
 import { fiscalQrText } from '@/domain/fiscal';
 
@@ -105,6 +105,21 @@ function receiptCustomer(sale: Sale): ReceiptCustomerPayload | null {
   };
 }
 
+/** Cabecera de tienda (logo + datos) común a recibos y ticket de cierre. */
+export function buildStorePayload(settings: Settings): ReceiptStorePayload {
+  return {
+    name: settings.storeName,
+    logoData: settings.logoUrl || undefined,
+    headerText: settings.headerText || undefined,
+    legalName: settings.legalName,
+    taxId: settings.taxId,
+    address: settings.address,
+    phone: settings.phone,
+    footer: settings.ticketFooter || undefined,
+    legalText: settings.legalText || undefined,
+  };
+}
+
 /**
  * Construye el payload plano del ticket a partir de la venta y los ajustes.
  * El proceso principal de Electron lo convierte en bytes ESC/POS.
@@ -118,17 +133,7 @@ export function buildReceiptPayload(
   const customer = receiptCustomer(sale);
   return {
     type,
-    store: {
-      name: settings.storeName,
-      logoData: settings.logoUrl || undefined,
-      headerText: settings.headerText || undefined,
-      legalName: settings.legalName,
-      taxId: settings.taxId,
-      address: settings.address,
-      phone: settings.phone,
-      footer: settings.ticketFooter || undefined,
-      legalText: settings.legalText || undefined,
-    },
+    store: buildStorePayload(settings),
     sale: {
       number: sale.number,
       fiscalNumber: sale.fiscalNumber,
@@ -156,5 +161,14 @@ export function buildReceiptPayload(
  */
 export async function printTicket(payload: ReceiptPayload, config: PrinterConfig): Promise<PrintResult> {
   if (isDesktopPrinting()) return window.pos!.printReceipt(payload, config);
+  return { ok: false, error: 'No desktop' };
+}
+
+/**
+ * Imprime el ticket de CIERRE por la térmica (ESC/POS vía IPC), automático y
+ * sin diálogo, igual que un recibo. En web/dev sin Electron devuelve error.
+ */
+export async function printClosing(payload: ClosingPayload, config: PrinterConfig): Promise<PrintResult> {
+  if (isDesktopPrinting() && window.pos?.printClosing) return window.pos.printClosing(payload, config);
   return { ok: false, error: 'No desktop' };
 }

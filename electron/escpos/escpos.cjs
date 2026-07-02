@@ -556,6 +556,86 @@ function buildSampleReceipt(config, store) {
   );
 }
 
+/**
+ * Ticket de CIERRE de caja en ESC/POS (mismo camino que el recibo: se imprime
+ * por la térmica, automático y con el ancho correcto). Cabecera de tienda +
+ * datos del cierre + productos vendidos agrupados.
+ * payload: { store: {...}, closing: { closedAt, openedByName, ticketCount,
+ *   salesTotal, cashCollected, cardCollected, products:[{quantity,name,total}], note } }
+ */
+function buildClosingReport(payload, config) {
+  const cfg = config || {};
+  const width = lineWidth(cfg.paperWidth);
+  const enc = cfg.encoding || 'cp858';
+  const chunks = [];
+  const out = (buf) => chunks.push(buf);
+  const line = (text) => { out(encodeText(text, enc)); out(CMD.LF); };
+  const sep = () => line(separator(width));
+
+  const store = payload.store || {};
+  const c = payload.closing || {};
+
+  out(CMD.INIT);
+  out(codePageCommand(enc));
+  if (usesGraphicEuro(enc)) out(buildEuroDefinition());
+
+  // --- Cabecera de tienda (logo + datos), como en un ticket normal ---
+  out(CMD.ALIGN_CENTER);
+  if (store.logoData) {
+    const logo = logoRasterBytes(store.logoData, Math.min(width * 8, String(cfg.paperWidth) === '58' ? 240 : 384));
+    if (logo) out(logo);
+  }
+  out(CMD.SIZE_DOUBLE_H);
+  out(CMD.BOLD_ON);
+  line(store.name || 'TICKET');
+  out(CMD.BOLD_OFF);
+  out(CMD.SIZE_NORMAL);
+  if (store.headerText) line(store.headerText);
+  if (store.legalName || store.taxId) line([store.legalName, store.taxId].filter(Boolean).join(' · '));
+  if (store.address) for (const l of wrap(store.address, width)) line(l);
+  if (store.phone) line(`Tel. ${store.phone}`);
+
+  // --- Título del cierre ---
+  out(CMD.ALIGN_LEFT);
+  sep();
+  out(CMD.ALIGN_CENTER);
+  out(CMD.BOLD_ON);
+  line('RESUMEN DE CIERRE');
+  out(CMD.BOLD_OFF);
+  line(formatDateTime(c.closedAt));
+  out(CMD.ALIGN_LEFT);
+  sep();
+
+  if (c.openedByName) line(padLine('Abierta por', c.openedByName, width));
+  if (c.ticketCount != null) line(padLine('Tickets', String(c.ticketCount), width));
+  line(padLine('Ventas netas', formatEuro(c.salesTotal), width));
+  line(padLine('Efectivo', formatEuro(c.cashCollected), width));
+  line(padLine('Tarjeta', formatEuro(c.cardCollected), width));
+
+  const products = c.products || [];
+  if (products.length) {
+    sep();
+    out(CMD.BOLD_ON);
+    line('PRODUCTOS VENDIDOS');
+    out(CMD.BOLD_OFF);
+    for (const p of products) {
+      printItemLine(line, `${p.quantity}x ${p.name}`, formatEuro(p.total), width);
+    }
+    out(CMD.BOLD_ON);
+    line(padLine('Total productos', formatEuro(c.salesTotal), width));
+    out(CMD.BOLD_OFF);
+  }
+
+  if (c.note) { sep(); for (const l of wrap(`Obs.: ${c.note}`, width)) line(l); }
+
+  out(CMD.ALIGN_LEFT);
+  out(CMD.LF);
+  out(CMD.LF);
+  out(CMD.LF);
+  if (cfg.autoCut !== false) out(cut(false));
+  return Buffer.concat(chunks);
+}
+
 module.exports = {
   ESC,
   GS,
@@ -578,6 +658,7 @@ module.exports = {
   cut,
   qrBytes,
   buildReceiptBytes,
+  buildClosingReport,
   buildTestTicket,
   buildSampleReceipt,
   formatDateTime,

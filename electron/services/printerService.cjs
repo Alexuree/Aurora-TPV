@@ -215,6 +215,11 @@ async function printReceipt(payload, cfg) {
   return last;
 }
 
+async function printClosingReport(payload, cfg) {
+  const bytes = escpos.buildClosingReport(payload, cfg);
+  return sendBytes(bytes, cfg);
+}
+
 async function cutPaper(cfg) {
   const bytes = Buffer.concat([escpos.CMD.LF, escpos.CMD.LF, escpos.cut(false)]);
   return sendBytes(bytes, cfg);
@@ -231,6 +236,7 @@ async function testFullReceipt(cfg, store) {
 module.exports = {
   getPrinters,
   printReceipt,
+  printClosingReport,
   cutPaper,
   testPrinter,
   testFullReceipt,

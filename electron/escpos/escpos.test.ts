@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import escpos from './escpos.cjs';
 
 const {
-  buildReceiptBytes, drawerKick, cut, padLine, separator, formatEuro, lineWidth, encodeText,
+  buildReceiptBytes, buildClosingReport, drawerKick, cut, padLine, separator, formatEuro, lineWidth, encodeText,
   codePageCommand, buildEuroDefinition, usesGraphicEuro,
 } = escpos as any;
 
@@ -195,5 +195,45 @@ describe('buildReceiptBytes', () => {
     expect(indexOfSeq(withQr, [0x1d, 0x28, 0x6b])).toBeGreaterThan(-1);
     const noQr = buildReceiptBytes({ type: 'ORIGINAL', store, sale }, { paperWidth: '80', autoCut: true, printQr: true });
     expect(indexOfSeq(noQr, [0x1d, 0x28, 0x6b])).toBe(-1);
+  });
+});
+
+describe('buildClosingReport', () => {
+  const closingPayload = {
+    store,
+    closing: {
+      closedAt: '2026-07-02T20:00:00.000Z',
+      openedByName: 'Ignacio',
+      ticketCount: 3,
+      salesTotal: 45,
+      cashCollected: 20,
+      cardCollected: 25,
+      products: [
+        { quantity: 3, name: 'Fotografía 1', total: 15 },
+        { quantity: 1, name: 'Colonia 50ml', total: 30 },
+      ],
+      note: 'Todo correcto',
+    },
+  };
+
+  it('empieza con INIT + página de códigos y corta al final', () => {
+    const buf = buildClosingReport(closingPayload, { paperWidth: '80', autoCut: true });
+    expect([buf[0], buf[1]]).toEqual([0x1b, 0x40]); // INIT
+    expect([buf[2], buf[3], buf[4]]).toEqual([0x1b, 0x74, 19]); // ESC t 19
+    expect(indexOfSeq(buf, [0x1d, 0x56, 0])).toBeGreaterThan(-1); // corte
+  });
+
+  it('incluye cabecera de tienda, título y productos agrupados', () => {
+    const buf = buildClosingReport(closingPayload, { paperWidth: '80', autoCut: true });
+    const text = buf.toString('latin1');
+    expect(text).toContain('Aurora'); // nombre de tienda (cabecera)
+    expect(text).toContain('RESUMEN DE CIERRE');
+    expect(text).toContain('Fotog'); // línea de producto (ASCII previo a la tilde)
+    expect(text).toContain('Total productos');
+  });
+
+  it('respeta autoCut=false', () => {
+    const buf = buildClosingReport(closingPayload, { paperWidth: '58', autoCut: false });
+    expect(indexOfSeq(buf, [0x1d, 0x56, 0])).toBe(-1);
   });
 });

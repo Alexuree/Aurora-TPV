@@ -35,6 +35,7 @@ function registerIpc() {
   }));
 
   ipcMain.handle('pos:printReceipt', safe((payload, cfg) => printerService.printReceipt(payload, cfg)));
+  ipcMain.handle('pos:printClosing', safe((payload, cfg) => printerService.printClosingReport(payload, cfg)));
   ipcMain.handle('pos:printTest', safe((cfg, store) => printerService.testPrinter(cfg, store)));
   ipcMain.handle('pos:printFullTest', safe((cfg, store) => printerService.testFullReceipt(cfg, store)));
   ipcMain.handle('pos:cutPaper', safe((cfg) => printerService.cutPaper(cfg)));

@@ -67,6 +67,20 @@ export interface ReceiptPayload {
   sale: ReceiptSalePayload;
 }
 
+export interface ClosingPayload {
+  store: ReceiptStorePayload;
+  closing: {
+    closedAt: string;
+    openedByName: string;
+    ticketCount: number;
+    salesTotal: number;
+    cashCollected: number;
+    cardCollected: number;
+    products: { quantity: number; name: string; total: number }[];
+    note?: string;
+  };
+}
+
 /* --------------------------- API de window.pos --------------------- */
 
 export interface PosResult {
@@ -92,6 +106,7 @@ export interface PosApi {
   getDeviceConfig?(): Promise<PosDeviceConfig>;
   getPrinters(): Promise<PosPrinterInfo[]>;
   printReceipt(payload: ReceiptPayload, cfg: PrinterConfig): Promise<PosResult>;
+  printClosing?(payload: ClosingPayload, cfg: PrinterConfig): Promise<PosResult>;
   printTest(cfg: PrinterConfig, store?: ReceiptStorePayload): Promise<PosResult>;
   printFullTest(cfg: PrinterConfig, store?: ReceiptStorePayload): Promise<PosResult>;
   cutPaper(cfg: PrinterConfig): Promise<PosResult>;

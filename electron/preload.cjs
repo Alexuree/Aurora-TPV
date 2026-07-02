@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('pos', {
   getDeviceConfig: () => ipcRenderer.invoke('pos:getDeviceConfig'),
   getPrinters: () => ipcRenderer.invoke('pos:getPrinters'),
   printReceipt: (payload, cfg) => ipcRenderer.invoke('pos:printReceipt', payload, cfg),
+  printClosing: (payload, cfg) => ipcRenderer.invoke('pos:printClosing', payload, cfg),
   printTest: (cfg, store) => ipcRenderer.invoke('pos:printTest', cfg, store),
   printFullTest: (cfg, store) => ipcRenderer.invoke('pos:printFullTest', cfg, store),
   cutPaper: (cfg) => ipcRenderer.invoke('pos:cutPaper', cfg),

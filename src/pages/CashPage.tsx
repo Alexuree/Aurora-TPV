@@ -3,7 +3,7 @@
 // salidas), cierre diario con descuadre y resumen por método de pago.
 // =====================================================================
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDownCircle, ArrowUpCircle, Wallet } from 'lucide-react';
 import { useAuth } from '@/store/authStore';
 import {
@@ -20,7 +20,8 @@ import type { CashSession, PaymentMethod, Sale } from '@/domain/types';
 import { formatMoney, round2 } from '@/domain/money';
 import { aggregateSoldProducts } from '@/domain/cash';
 import { formatDateTime } from '@/lib/format';
-import { getPrinterService } from '@/lib/printing';
+import { buildStorePayload, isDesktopPrinting, printClosing } from '@/lib/printing';
+import { usePrinterConfig } from '@/hooks/pos';
 import { PAYMENT_LABELS } from '@/domain/payments';
 import { Button, Field, Modal, PageHeader, inputClass } from '@/components/ui';
 import { CashDrawerButton } from '@/components/pos/CashDrawerButton';
@@ -52,14 +53,6 @@ export function CashPage() {
   const [openingFloat, setOpeningFloat] = useState('');
   const [showClose, setShowClose] = useState(false);
   const [closingPrint, setClosingPrint] = useState<ClosingPrintState | null>(null);
-
-  useEffect(() => {
-    if (!closingPrint) return;
-    const timer = window.setTimeout(() => {
-      void getPrinterService().print();
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [closingPrint]);
 
   const sessionAllSales = useMemo(
     () => allSales.filter((s) => openSession && s.cashSessionId === openSession.id),
@@ -96,7 +89,7 @@ export function CashPage() {
           </div>
           <SessionHistory sessions={sessions} />
         </div>
-        {closingPrint && <ClosingSummaryModal session={closingPrint.session} sales={closingPrint.sales} onClose={() => setClosingPrint(null)} />}
+        {closingPrint && <ClosingSummaryModal session={closingPrint.session} sales={closingPrint.sales} autoPrint onClose={() => setClosingPrint(null)} />}
       </div>
     );
   }
@@ -160,7 +153,7 @@ export function CashPage() {
           pending={closeCash.isPending}
         />
       )}
-      {closingPrint && <ClosingSummaryModal session={closingPrint.session} sales={closingPrint.sales} onClose={() => setClosingPrint(null)} />}
+      {closingPrint && <ClosingSummaryModal session={closingPrint.session} sales={closingPrint.sales} autoPrint onClose={() => setClosingPrint(null)} />}
     </div>
   );
 }
@@ -297,16 +290,55 @@ function SessionHistory({ sessions }: { sessions: CashSession[] }) {
   );
 }
 
-function ClosingSummaryModal({ session, sales, onClose }: { session: CashSession; sales: Sale[]; onClose: () => void }) {
+function ClosingSummaryModal({ session, sales, autoPrint, onClose }: { session: CashSession; sales: Sale[]; autoPrint?: boolean; onClose: () => void }) {
   const { data: settings } = useSettings();
+  const { data: printerConfig } = usePrinterConfig();
   const validSales = sales.filter((s) => s.status !== 'cancelled');
   const payments = paymentSummary(validSales);
   const cashCollected = sales.length > 0 ? payments.cash : Math.max(0, (session.expectedCash ?? 0) - session.openingFloat);
   const cardCollected = sales.length > 0 ? payments.card : (session.cardTotal ?? 0);
   const salesTotal = session.salesTotal ?? round2(payments.cash + payments.card);
+  const products = aggregateSoldProducts(validSales);
+  const printedRef = useRef(false);
+
+  // Impresión térmica ESC/POS: automática y SIN diálogo, igual que un recibo.
+  // En web/dev sin Electron cae al diálogo del navegador como último recurso.
+  const doPrint = () => {
+    if (isDesktopPrinting() && printerConfig && settings) {
+      void printClosing(
+        {
+          store: buildStorePayload(settings),
+          closing: {
+            closedAt: session.closedAt ?? new Date().toISOString(),
+            openedByName: session.openedByName,
+            ticketCount: validSales.length,
+            salesTotal,
+            cashCollected,
+            cardCollected,
+            products,
+            note: session.note || undefined,
+          },
+        },
+        printerConfig,
+      );
+    } else {
+      window.print();
+    }
+  };
+
+  // Auto-impresión al cerrar caja (espera a que carguen ajustes/config; 1 sola vez).
+  useEffect(() => {
+    if (!autoPrint || printedRef.current) return;
+    if (isDesktopPrinting() && (!printerConfig || !settings)) return; // aún cargando
+    printedRef.current = true;
+    const t = window.setTimeout(doPrint, 300);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrint, printerConfig, settings]);
+
   return (
     <Modal open onClose={onClose} size="sm" title={`Cierre de caja · ${formatDateTime(session.closedAt)}`} footer={
-      <Button variant="outline" className="no-print w-full" onClick={() => window.print()}>Imprimir resumen</Button>
+      <Button variant="outline" className="no-print w-full" onClick={doPrint}>Imprimir resumen</Button>
     }>
       <div id="print-area" className="mx-auto w-[300px] font-mono text-[12px] text-black">
         {/* Cabecera de tienda (logo + datos), como en un ticket normal */}
