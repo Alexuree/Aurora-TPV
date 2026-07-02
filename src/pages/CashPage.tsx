@@ -14,9 +14,11 @@ import {
   useOpenCash,
   useOpenCashSession,
   useSales,
+  useSettings,
 } from '@/hooks/data';
 import type { CashSession, PaymentMethod, Sale } from '@/domain/types';
 import { formatMoney, round2 } from '@/domain/money';
+import { aggregateSoldProducts } from '@/domain/cash';
 import { formatDateTime } from '@/lib/format';
 import { getPrinterService } from '@/lib/printing';
 import { PAYMENT_LABELS } from '@/domain/payments';
@@ -296,6 +298,7 @@ function SessionHistory({ sessions }: { sessions: CashSession[] }) {
 }
 
 function ClosingSummaryModal({ session, sales, onClose }: { session: CashSession; sales: Sale[]; onClose: () => void }) {
+  const { data: settings } = useSettings();
   const validSales = sales.filter((s) => s.status !== 'cancelled');
   const payments = paymentSummary(validSales);
   const cashCollected = sales.length > 0 ? payments.cash : Math.max(0, (session.expectedCash ?? 0) - session.openingFloat);
@@ -306,45 +309,49 @@ function ClosingSummaryModal({ session, sales, onClose }: { session: CashSession
       <Button variant="outline" className="no-print w-full" onClick={() => window.print()}>Imprimir resumen</Button>
     }>
       <div id="print-area" className="mx-auto w-[300px] font-mono text-[12px] text-black">
+        {/* Cabecera de tienda (logo + datos), como en un ticket normal */}
+        {settings && (
+          <div className="text-center">
+            {settings.logoUrl && (
+              <img src={settings.logoUrl} alt="logo" className="mx-auto mb-1 max-h-14 max-w-[180px] object-contain" />
+            )}
+            <p className="text-base font-bold">{settings.storeName}</p>
+            {settings.headerText && <p>{settings.headerText}</p>}
+            {(settings.legalName || settings.taxId) && <p>{[settings.legalName, settings.taxId].filter(Boolean).join(' · ')}</p>}
+            {settings.address && <p>{settings.address}</p>}
+            {settings.phone && <p>Tel. {settings.phone}</p>}
+            <div className="my-2 border-t border-dashed border-black" />
+          </div>
+        )}
+
         <p className="text-center text-base font-bold">RESUMEN DE CIERRE</p>
         <p className="text-center">{formatDateTime(session.closedAt)}</p>
         <div className="my-2 border-t border-dashed border-black" />
         <Row k="Abierta por" v={session.openedByName} />
-        <Row k="Fondo inicial" v={formatMoney(session.openingFloat)} />
         <Row k="Tickets válidos" v={sales.length > 0 ? String(validSales.length) : '—'} />
         <Row k="Ventas netas" v={formatMoney(salesTotal)} />
         <Row k="Efectivo cobrado" v={formatMoney(cashCollected)} />
         <Row k="Tarjeta cobrada" v={formatMoney(cardCollected)} />
-        <Row k="Anulado" v={formatMoney(session.cancellationsTotal ?? 0)} />
-        <div className="my-2 border-t border-dashed border-black" />
-        <Row k="Efectivo previsto" v={formatMoney(session.expectedCash ?? 0)} />
-        <Row k="Efectivo contado" v={session.countedCash == null ? 'No contado' : formatMoney(session.countedCash)} />
-        <Row k="Descuadre" v={session.difference == null ? 'No calculado' : `${session.difference > 0 ? '+' : ''}${formatMoney(session.difference)}`} />
         {sales.length > 0 && (
           <>
             <div className="my-2 border-t border-dashed border-black" />
-            <p className="mb-1 font-bold">VENTAS</p>
-            {[...sales].sort((a, b) => a.number - b.number).map((sale) => (
-              <div key={sale.id} className="mb-1">
-                <div className="flex justify-between gap-2">
-                  <span>#{sale.number} {sale.status === 'cancelled' ? 'ANULADO' : ''}</span>
-                  <span>{formatMoney(sale.total)}</span>
-                </div>
-                <p className="text-[10px]">
-                  {formatDateTime(sale.createdAt)} · {sale.cashierName} · {salePaymentText(sale)}
-                </p>
+            <p className="mb-1 font-bold">PRODUCTOS VENDIDOS</p>
+            {aggregateSoldProducts(validSales).map((p) => (
+              <div key={p.productId || p.name} className="flex justify-between gap-2">
+                <span>{p.quantity}x {p.name}</span>
+                <span>{formatMoney(p.total)}</span>
               </div>
             ))}
+            <div className="mt-1 flex justify-between border-t border-dashed border-black pt-1 font-bold">
+              <span>Total productos</span>
+              <span>{formatMoney(salesTotal)}</span>
+            </div>
           </>
         )}
         {session.note && <p className="mt-2 text-[11px]">Obs.: {session.note}</p>}
       </div>
     </Modal>
   );
-}
-
-function salePaymentText(sale: Sale): string {
-  return sale.payments.map((p) => `${PAYMENT_LABELS[p.method] ?? 'Tarjeta'} ${formatMoney(p.amount)}`).join(' + ');
 }
 
 function Row({ k, v }: { k: string; v: string }) {
