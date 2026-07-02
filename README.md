@@ -2,8 +2,8 @@
 
 TPV (Terminal Punto de Venta) profesional para tienda de mostrador, pensado
 para **uso real** y no como demo. Atiende a un cliente a la vez, con un flujo
-de venta rápido en pocos clics, control de stock, caja, devoluciones, informes
-y usuarios con permisos.
+de venta rápido en pocos clics, catálogo, caja, informes, auditoría y usuarios
+con permisos.
 
 > **Arranca y vende en 1 minuto:** funciona en **modo local** (datos en el
 > navegador) sin montar nada. Cuando quieras, lo conectas a **Supabase**
@@ -21,22 +21,23 @@ npm run dev      # arranca en http://localhost:5173
 ```
 
 Abre `http://localhost:5173`. En modo local ya hay catálogo de ejemplo
-(perfumes, colonias, material de fotografía) y tres usuarios de prueba:
+(perfumes, colonias, material de fotografía) y tres operadores de prueba:
 
-| Rol           | Usuario        | PIN   |
-|---------------|----------------|-------|
-| Administrador | `admin`        | 1234  |
-| Encargado     | `encargado`    | 2222  |
-| Dependiente   | `dependiente`  | 0000  |
+| Rol           | Usuario        |
+|---------------|----------------|
+| Administrador | `admin`        |
+| Encargado     | `encargado`    |
+| Dependiente   | `dependiente`  |
 
-> En la pantalla de acceso hay botones de **acceso rápido** para entrar con un clic.
+> La app ya no muestra pantalla de login: arranca con sesión de dispositivo y
+> permite cambiar el operador desde el selector superior.
 
 ### Flujo de venta
-1. Inicia sesión.
+1. Selecciona el operador si hace falta.
 2. **Abre la caja** con el saldo inicial (obligatorio para vender).
 3. Busca o **escanea** un producto → se añade al ticket.
 4. Ajusta cantidades / descuentos (según permisos).
-5. Pulsa **COBRAR** → elige método (efectivo/tarjeta/Bizum/mixto) → confirma.
+5. Pulsa **COBRAR** → elige método (efectivo/tarjeta/mixto) → confirma.
 6. Se genera el **recibo** (imprimible) y el TPV vuelve a una venta nueva.
 
 ---
@@ -48,11 +49,39 @@ npm run dev        # desarrollo con recarga en caliente
 npm run build      # build de producción (typecheck + bundle en /dist)
 npm run preview    # sirve el build de producción
 npm run typecheck  # solo comprobación de tipos
+npm run app:installer # instalador Windows autocontenido para otro PC
 ```
 
 ---
 
-## 3. Modo Supabase (base de datos en la nube)
+## 3. Instalación en otro PC y actualizaciones por nube
+
+El PC de la tienda no necesita Node.js, npm ni Git. Se instala una vez el
+**shell Electron** y este carga el renderer publicado en la nube. Cada commit
+desplegado en Vercel/Netlify/Cloudflare llega al TPV al abrir o recargar.
+
+Flujo recomendado:
+
+1. Publica el renderer (`npm run build`, output `dist`) en un hosting estático.
+2. Genera el instalador con `npm run app:installer`.
+3. Instálalo en el PC nuevo.
+4. Edita el `device.json` local desde `Aurora TPV -> Abrir configuración del dispositivo`:
+
+```json
+{
+  "appUrl": "https://aurora-tpv.vercel.app/",
+  "deviceEmail": "terminal-1@tu-tienda.com",
+  "devicePassword": "contraseña-del-terminal",
+  "defaultOperator": "admin@tu-tienda.com"
+}
+```
+
+La contraseña del dispositivo **no va en el bundle web público**. Consulta la
+guía completa en [`docs/DESKTOP_CLOUD_DEPLOYMENT.md`](docs/DESKTOP_CLOUD_DEPLOYMENT.md).
+
+---
+
+## 4. Modo Supabase (base de datos en la nube)
 
 1. Crea un proyecto gratuito en [supabase.com](https://supabase.com).
 2. En el **SQL Editor**, ejecuta en orden:
@@ -76,7 +105,7 @@ npm run typecheck  # solo comprobación de tipos
 
 ---
 
-## 4. Estructura del proyecto
+## 5. Estructura del proyecto
 
 ```
 TPV_TIENDA/
@@ -115,16 +144,16 @@ cambiar de almacenamiento o reutilizar la lógica sin tocar la interfaz.
 
 ---
 
-## 5. Funcionalidades
+## 6. Funcionalidades
 
 - **Venta:** búsqueda/escáner, categorías, ticket en tiempo real, descuentos y
   cambio de precio por permiso, IVA desglosado, aparcar implícito (cancelar).
-- **Cobro:** efectivo (con cambio y entregas rápidas), tarjeta, Bizum y mixto.
-- **Inventario:** descuento automático de stock, avisos de stock bajo, ajustes
-  manuales y registro de movimientos.
+- **Cobro:** efectivo (con cambio y entregas rápidas), tarjeta y mixto.
+- **Catálogo:** productos, categorías, códigos de barras, edición de precios e
+  historial de cambios.
 - **Caja:** apertura con fondo, entradas/salidas, cierre a ciegas con descuadre
   y resumen por método de pago.
-- **Devoluciones:** localizar venta, devolver parcial o total, reintegrar stock.
+- **Tickets:** impresión térmica ESC/POS, reimpresión, anulación y auditoría.
 - **Informes:** facturación, ticket medio, top productos, por categoría y método
   de pago, beneficio estimado, exportación CSV.
 - **Usuarios:** roles Administrador / Encargado / Dependiente con permisos.
@@ -133,7 +162,7 @@ Consulta [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) para el diseño completo
 
 ---
 
-## 6. Impresión térmica ESC/POS y cajón registrador
+## 7. Impresión térmica ESC/POS y cajón registrador
 
 La app de **escritorio** (Electron) imprime tickets reales en impresoras
 térmicas ESC/POS y abre el **cajón registrador** conectado a la impresora.

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { cashSalesTotal, computeExpectedCash, expectedCash, movementsTotals } from './cash';
-import type { CashMovement, Sale } from './types';
+import { aggregateSoldProducts, cashSalesTotal, computeExpectedCash, expectedCash, movementsTotals } from './cash';
+import type { CashMovement, Sale, SaleItem } from './types';
+
+function item(partial: Partial<SaleItem>): SaleItem {
+  return {
+    id: 'i', productId: 'p', name: 'Producto', quantity: 1, unitPrice: 0, discountPct: 0,
+    ivaRate: 21, taxBase: 0, taxAmount: 0, lineTotal: 0, returnedQty: 0, ...partial,
+  };
+}
 
 function sale(partial: Partial<Sale>): Sale {
   return {
@@ -64,5 +71,32 @@ describe('computeExpectedCash', () => {
     const movements = [mov('in', 20), mov('out', 5)];
     // 50 (fondo) + 100 (efectivo) + 20 − 5 = 165
     expect(computeExpectedCash(50, sales, movements)).toBe(165);
+  });
+});
+
+describe('aggregateSoldProducts', () => {
+  it('acumula cantidad e importe por producto en ventas no anuladas', () => {
+    const sales = [
+      sale({ items: [item({ productId: 'foto1', name: 'Fotografía 1', quantity: 2, lineTotal: 10 })] }),
+      sale({ items: [
+        item({ productId: 'foto1', name: 'Fotografía 1', quantity: 1, lineTotal: 5 }),
+        item({ productId: 'colonia', name: 'Colonia 50ml', quantity: 1, lineTotal: 30 }),
+      ] }),
+      sale({ status: 'cancelled', items: [item({ productId: 'foto1', name: 'Fotografía 1', quantity: 9, lineTotal: 999 })] }),
+    ];
+    const result = aggregateSoldProducts(sales);
+    // Colonia (30) va antes que Fotografía 1 (15) por importe desc.
+    expect(result).toEqual([
+      { productId: 'colonia', name: 'Colonia 50ml', quantity: 1, total: 30 },
+      { productId: 'foto1', name: 'Fotografía 1', quantity: 3, total: 15 },
+    ]);
+  });
+
+  it('agrupa por nombre cuando no hay productId', () => {
+    const sales = [
+      sale({ items: [item({ productId: '', name: 'Suelto', quantity: 1, lineTotal: 2 })] }),
+      sale({ items: [item({ productId: '', name: 'Suelto', quantity: 3, lineTotal: 6 })] }),
+    ];
+    expect(aggregateSoldProducts(sales)).toEqual([{ productId: '', name: 'Suelto', quantity: 4, total: 8 }]);
   });
 });

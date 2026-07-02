@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Check, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { Role, User } from '@/domain/types';
 import { useDeleteUser, useSaveUser, useUsers } from '@/hooks/data';
+import { useAuth } from '@/store/authStore';
 import { PERMISSION_LABELS, ROLE_LABELS, ROLE_PERMISSIONS } from '@/domain/permissions';
 import { dataMode } from '@/config/env';
 import { Badge, Button, Field, Modal, PageHeader, inputClass } from '@/components/ui';
@@ -14,6 +15,7 @@ export function UsersPage() {
   const { data: users = [] } = useUsers();
   const save = useSaveUser();
   const del = useDeleteUser();
+  const reloadOperators = useAuth((s) => s.reloadOperators);
   const [editing, setEditing] = useState<User | null>(null);
 
   return (
@@ -38,7 +40,7 @@ export function UsersPage() {
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-1">
                           <button onClick={() => setEditing(u)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><Pencil size={16} /></button>
-                          <button onClick={() => { if (confirm(`¿Desactivar a ${u.fullName}?`)) del.mutate(u.id); }} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={16} /></button>
+                          <button onClick={async () => { if (confirm(`¿Desactivar a ${u.fullName}?`)) { await del.mutateAsync(u.id); await reloadOperators(); } }} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 size={16} /></button>
                         </div>
                       </td>
                     </tr>
@@ -70,7 +72,7 @@ export function UsersPage() {
       </div>
 
       {editing && (
-        <UserFormModal user={editing} saving={save.isPending} onClose={() => setEditing(null)} onSave={async (u) => { await save.mutateAsync(u); setEditing(null); }} />
+        <UserFormModal user={editing} saving={save.isPending} onClose={() => setEditing(null)} onSave={async (u) => { await save.mutateAsync(u); await reloadOperators(); setEditing(null); }} />
       )}
     </div>
   );

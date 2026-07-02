@@ -27,3 +27,5 @@ Thumbs.db
 
 # Vite / TS
 *.tsbuildinfo
+
+.vercel/

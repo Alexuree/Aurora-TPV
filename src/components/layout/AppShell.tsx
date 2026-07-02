@@ -6,8 +6,9 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
+  Check,
+  ChevronDown,
   Contact,
-  LogOut,
   Package,
   Printer,
   ReceiptText,
@@ -17,7 +18,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useAuth } from '@/store/authStore';
 import type { Permission } from '@/domain/types';
 import { ROLE_LABELS } from '@/domain/permissions';
@@ -33,34 +34,34 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { to: '/', label: 'Venta', icon: <ShoppingCart size={22} />, permission: 'sell', end: true },
-  { to: '/ventas', label: 'Ventas', icon: <ReceiptText size={22} /> },
-  { to: '/clientes', label: 'Clientes', icon: <Contact size={22} />, permission: 'sell' },
-  { to: '/productos', label: 'Productos', icon: <Package size={22} />, permission: 'manage_products' },
-  { to: '/caja', label: 'Caja', icon: <Wallet size={22} />, permission: 'open_close_cash' },
-  { to: '/informes', label: 'Informes', icon: <BarChart3 size={22} />, permission: 'view_reports' },
-  { to: '/usuarios', label: 'Usuarios', icon: <Users size={22} />, permission: 'manage_users' },
-  { to: '/ajustes', label: 'Ajustes', icon: <SettingsIcon size={22} />, permission: 'manage_settings', end: true },
-  { to: '/ajustes/impresora', label: 'Impresora', icon: <Printer size={22} />, permission: 'manage_settings' },
-  { to: '/auditoria', label: 'Auditoría', icon: <ShieldCheck size={22} />, permission: 'manage_settings' },
+  { to: '/', label: 'Venta', icon: <ShoppingCart size={18} />, permission: 'sell', end: true },
+  { to: '/ventas', label: 'Ventas', icon: <ReceiptText size={18} /> },
+  { to: '/clientes', label: 'Clientes', icon: <Contact size={18} />, permission: 'sell' },
+  { to: '/productos', label: 'Productos', icon: <Package size={18} />, permission: 'manage_products' },
+  { to: '/caja', label: 'Caja', icon: <Wallet size={18} />, permission: 'open_close_cash' },
+  { to: '/informes', label: 'Informes', icon: <BarChart3 size={18} />, permission: 'view_reports' },
+  { to: '/usuarios', label: 'Usuarios', icon: <Users size={18} />, permission: 'manage_users' },
+  { to: '/ajustes', label: 'Ajustes', icon: <SettingsIcon size={18} />, permission: 'manage_settings', end: true },
+  { to: '/ajustes/impresora', label: 'Impresora', icon: <Printer size={18} />, permission: 'manage_settings' },
+  { to: '/auditoria', label: 'Auditoría', icon: <ShieldCheck size={18} />, permission: 'manage_settings' },
 ];
 
 export function AppShell() {
-  const { user, logout, can } = useAuth();
+  const { user, operators, setOperator, can } = useAuth();
   const navigate = useNavigate();
   const { data: openSession } = useOpenCashSession();
+  const [operatorMenu, setOperatorMenu] = useState(false);
 
   const items = NAV.filter((i) => !i.permission || can(i.permission));
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100">
       {/* Sidebar */}
-      <aside className="flex w-20 flex-col items-center gap-1 bg-slate-900 py-4 lg:w-60 lg:items-stretch lg:px-3">
-        <div className="mb-4 flex items-center gap-2.5 px-2 lg:px-1">
-          <img src="/favicon.svg" alt="Aurora" className="h-10 w-10 shrink-0" />
-          <div className="hidden lg:block">
-            <p className="text-sm font-bold leading-tight text-white">Aurora TPV</p>
-            <p className="text-[11px] leading-tight text-slate-400">Perfumería · Foto</p>
+      <aside className="flex w-14 flex-col items-center gap-1 bg-slate-900 py-3 lg:w-32 lg:items-stretch lg:px-2">
+        <div className="mb-3 flex items-center gap-2 px-1">
+          <img src="/favicon.svg" alt="Aurora" className="h-7 w-7 shrink-0" />
+          <div className="hidden min-w-0 lg:block">
+            <p className="truncate text-xs font-bold leading-tight text-white">Aurora TPV</p>
           </div>
         </div>
 
@@ -72,7 +73,7 @@ export function AppShell() {
               end={item.end}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-3 rounded-xl px-3 py-2.5 text-slate-400 transition',
+                  'flex items-center gap-2 rounded-lg px-2.5 py-2 text-slate-400 transition',
                   'justify-center lg:justify-start',
                   isActive ? 'bg-white/10 text-white' : 'hover:bg-white/5 hover:text-slate-200',
                 )
@@ -80,7 +81,7 @@ export function AppShell() {
               title={item.label}
             >
               {item.icon}
-              <span className="hidden text-sm font-medium lg:inline">{item.label}</span>
+              <span className="hidden truncate text-xs font-medium lg:inline">{item.label}</span>
             </NavLink>
           ))}
         </nav>
@@ -101,24 +102,60 @@ export function AppShell() {
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold leading-tight text-slate-800">{user?.fullName}</p>
-              <p className="text-[11px] leading-tight text-slate-400">{user ? ROLE_LABELS[user.role] : ''}</p>
-            </div>
-            <div className="bg-aurora flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white">
-              {user?.fullName?.slice(0, 1).toUpperCase()}
-            </div>
+          {/* Selector de operador (sin login): clic → lista de operadores activos. */}
+          <div className="relative">
             <button
-              onClick={() => {
-                logout();
-                navigate('/login');
-              }}
-              className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-rose-600"
-              title="Cerrar sesión"
+              onClick={() => setOperatorMenu((o) => !o)}
+              className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition hover:bg-slate-100"
+              title="Cambiar de operador"
             >
-              <LogOut size={20} />
+              <div className="text-right">
+                <p className="text-sm font-semibold leading-tight text-slate-800">{user?.fullName}</p>
+                <p className="text-[11px] leading-tight text-slate-400">{user ? ROLE_LABELS[user.role] : ''}</p>
+              </div>
+              <div className="bg-aurora flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white">
+                {user?.fullName?.slice(0, 1).toUpperCase()}
+              </div>
+              <ChevronDown size={16} className="text-slate-400" />
             </button>
+
+            {operatorMenu && (
+              <>
+                <button className="fixed inset-0 z-10 cursor-default" onClick={() => setOperatorMenu(false)} aria-hidden />
+                <div className="absolute right-0 top-full z-20 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Cambiar de operador</p>
+                  <div className="max-h-72 overflow-y-auto">
+                    {operators.map((op) => (
+                      <button
+                        key={op.id}
+                        onClick={() => { setOperator(op); setOperatorMenu(false); }}
+                        className={cn(
+                          'flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left transition hover:bg-slate-50',
+                          op.id === user?.id && 'bg-brand-50',
+                        )}
+                      >
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">
+                          {op.fullName.slice(0, 1).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-800">{op.fullName}</p>
+                          <p className="text-[11px] text-slate-400">{ROLE_LABELS[op.role]}</p>
+                        </div>
+                        {op.id === user?.id && <Check size={16} className="text-brand-600" />}
+                      </button>
+                    ))}
+                  </div>
+                  {can('manage_users') && (
+                    <button
+                      onClick={() => { setOperatorMenu(false); navigate('/usuarios'); }}
+                      className="mt-1 flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm text-slate-500 transition hover:bg-slate-50"
+                    >
+                      <Users size={16} /> Gestionar usuarios…
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </header>
 

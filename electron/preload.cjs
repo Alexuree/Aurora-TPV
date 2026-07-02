@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('aurora', {
 
 contextBridge.exposeInMainWorld('pos', {
   isDesktop: true,
+  // Credenciales de dispositivo leídas del device.json local (no del bundle).
+  getDeviceConfig: () => ipcRenderer.invoke('pos:getDeviceConfig'),
   getPrinters: () => ipcRenderer.invoke('pos:getPrinters'),
   printReceipt: (payload, cfg) => ipcRenderer.invoke('pos:printReceipt', payload, cfg),
   printTest: (cfg, store) => ipcRenderer.invoke('pos:printTest', cfg, store),

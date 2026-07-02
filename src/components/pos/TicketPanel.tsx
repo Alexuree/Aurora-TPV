@@ -24,7 +24,7 @@ export function TicketPanel({ onCharge, onEditLine, onSelectCustomer }: Props) {
       {/* Cliente */}
       <button
         onClick={onSelectCustomer}
-        className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50"
+        className="flex items-center gap-2 border-b border-slate-100 px-3 py-3 text-left transition hover:bg-slate-50"
       >
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500">
           <UserIcon size={16} />
@@ -99,7 +99,7 @@ export function TicketPanel({ onCharge, onEditLine, onSelectCustomer }: Props) {
       </div>
 
       {/* Totales */}
-      <div className="border-t border-slate-100 px-4 py-3">
+      <div className="border-t border-slate-100 px-3 py-3">
         <div className="space-y-1 text-sm">
           <Row label="Base imponible" value={formatMoney(totals.subtotal)} muted />
           {totals.discountTotal > 0 && <Row label="Descuentos" value={`−${formatMoney(totals.discountTotal)}`} className="text-emerald-600" />}
@@ -109,15 +109,15 @@ export function TicketPanel({ onCharge, onEditLine, onSelectCustomer }: Props) {
         </div>
         <div className="mt-2 flex items-end justify-between border-t border-dashed border-slate-200 pt-2">
           <span className="text-sm font-semibold text-slate-500">TOTAL</span>
-          <span className="text-3xl font-extrabold tracking-tight text-slate-900">{formatMoney(totals.total)}</span>
+          <span className="text-2xl font-extrabold tracking-tight text-slate-900">{formatMoney(totals.total)}</span>
         </div>
 
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-          <Button size="xl" variant="primary" disabled={empty} onClick={onCharge} className="text-xl">
+          <Button size="lg" variant="primary" disabled={empty} onClick={onCharge} className="text-base font-bold">
             COBRAR
           </Button>
           <Button
-            size="xl"
+            size="lg"
             variant="outline"
             disabled={empty}
             onClick={() => {
@@ -126,7 +126,7 @@ export function TicketPanel({ onCharge, onEditLine, onSelectCustomer }: Props) {
             title="Cancelar venta"
             className="aspect-square px-0"
           >
-            <X size={24} />
+            <X size={20} />
           </Button>
         </div>
       </div>

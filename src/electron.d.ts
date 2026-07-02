@@ -80,8 +80,16 @@ export interface PosPrinterInfo {
   type: string;
 }
 
+export interface PosDeviceConfig {
+  email: string;
+  password: string;
+  defaultOperator: string;
+  path?: string;
+}
+
 export interface PosApi {
   readonly isDesktop: true;
+  getDeviceConfig?(): Promise<PosDeviceConfig>;
   getPrinters(): Promise<PosPrinterInfo[]>;
   printReceipt(payload: ReceiptPayload, cfg: PrinterConfig): Promise<PosResult>;
   printTest(cfg: PrinterConfig, store?: ReceiptStorePayload): Promise<PosResult>;

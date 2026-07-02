@@ -276,7 +276,7 @@ export function SalePage() {
       </section>
 
       {/* Columna ticket */}
-      <aside className="w-[380px] shrink-0 border-l border-slate-200 shadow-[-4px_0_16px_rgba(15,23,42,0.04)]">
+      <aside className="w-[200px] shrink-0 border-l border-slate-200 shadow-[-4px_0_16px_rgba(15,23,42,0.04)]">
         <TicketPanel
           onCharge={handleCharge}
           onEditLine={(l) => setEditLine(l)}

@@ -44,3 +44,31 @@ export function computeExpectedCash(openingFloat: number, sales: Sale[], movemen
   const { cashIn, cashOut } = movementsTotals(movements);
   return expectedCash({ openingFloat, cashSales: cashSalesTotal(sales), cashIn, cashOut });
 }
+
+export interface SoldProductLine {
+  productId: string;
+  name: string;
+  quantity: number;
+  total: number;
+}
+
+/**
+ * Agrupa los productos vendidos (ventas NO anuladas) por producto,
+ * acumulando la cantidad y el importe conjunto. Ideal para el ticket de
+ * cierre: en vez de listar ventas una a una, muestra cuánto se vendió de
+ * cada producto. Ordenado por importe descendente y, a igualdad, por nombre.
+ */
+export function aggregateSoldProducts(sales: Sale[]): SoldProductLine[] {
+  const map = new Map<string, SoldProductLine>();
+  for (const s of sales) {
+    if (s.status === 'cancelled') continue;
+    for (const it of s.items) {
+      const key = it.productId || it.name;
+      const row = map.get(key) ?? { productId: it.productId, name: it.name, quantity: 0, total: 0 };
+      row.quantity += it.quantity;
+      row.total = round2(row.total + it.lineTotal);
+      map.set(key, row);
+    }
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+}

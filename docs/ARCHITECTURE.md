@@ -40,7 +40,7 @@ producto comercial real, no de una demo.
    ni Supabase. La UI solo conoce la interfaz `Repository`.
 2. **Doble persistencia tras un mismo contrato.** Permite usar la app *hoy*
    (local) y escalar a multi-terminal (Supabase) sin reescribir la UI.
-3. **Las operaciones críticas son atómicas.** Venta, devolución y cierre de
+3. **Las operaciones críticas son atómicas.** Venta y cierre de
    caja se ejecutan como una unidad (en Supabase, vía funciones `SECURITY
    DEFINER`; en local, dentro de un único método del repositorio).
 4. **El dinero se calcula en un solo sitio** (`domain/cart.ts`,
@@ -56,16 +56,15 @@ Query · React Router · Supabase JS · lucide-react.
 
 | Ruta             | Pantalla            | Rol mínimo | Descripción |
 |------------------|---------------------|------------|-------------|
-| `/login`         | Acceso              | —          | Usuario+PIN (local) / email+contraseña (Supabase). |
 | `/`              | **Venta**           | Dependiente| Catálogo + ticket + cobro. Bloqueada si la caja está cerrada. |
 | `/ventas`        | Historial de ventas | Dependiente| Filtros por fecha, ver/imprimir recibo. |
-| `/devoluciones`  | Devoluciones        | Encargado  | Localizar venta y devolver artículos. |
 | `/productos`     | Productos           | Encargado  | Alta/edición/baja del catálogo. |
-| `/inventario`    | Inventario          | Encargado  | Stock, avisos, ajustes, movimientos. |
 | `/caja`          | Caja                | Dependiente| Apertura, movimientos, cierre. |
 | `/informes`      | Informes            | Encargado  | KPIs, rankings, CSV. |
 | `/usuarios`      | Usuarios            | Admin      | Personal y permisos. |
 | `/ajustes`       | Ajustes             | Admin      | Datos de tienda / ticket. |
+| `/ajustes/impresora` | Impresora y cajón | Admin | Configuración ESC/POS, pruebas y cajón. |
+| `/auditoria`     | Auditoría           | Admin      | Eventos de impresión, caja, cajón y configuración. |
 
 **Layout de la pantalla de venta** (prioriza velocidad):
 
@@ -95,7 +94,6 @@ auth.users 1──1 profiles (role → roles)
 
 categories 1──< products
 products    ──< sale_items          (por product_id, sin FK dura: histórico)
-            ──< stock_movements
 
 customers  1──< sales
 profiles   1──< sales (cashier)
@@ -104,7 +102,9 @@ cash_sessions 1──< cash_movements
 
 sales 1──< sale_items
 sales 1──< payments
-sales 1──< sale_returns 1──< return_items
+sales 1──< print_jobs
+cash_sessions 1──< cash_drawer_events
+audit_events
 
 settings (fila única, id = 1)
 ```
@@ -114,8 +114,7 @@ settings (fila única, id = 1)
 - **profiles** — `id` (=auth.users), `username`, `full_name`, `role`, `active`.
 - **categories** — `id`, `name`, `color`, `sort_order`, `active`.
 - **products** — `id`, `name`, `brand`, `sku`, `barcode`, `category_id`,
-  `price` (PVP, IVA incl.), `cost`, `iva_rate`, `tax_included`, `stock`,
-  `track_stock`, `low_stock_threshold`, `active`.
+  `price` (PVP, IVA incl.), `cost`, `iva_rate`, `tax_included`, `active`.
 - **customers** — `id`, `name`, `phone`, `email`, `tax_id`, `notes`.
 - **sales** — `id`, `number` (correlativo), `cashier_id/name`,
   `cash_session_id`, `customer_id/name`, `status`, `subtotal`, `tax_total`,
@@ -124,35 +123,33 @@ settings (fila única, id = 1)
   `discount_pct`, `iva_rate`, `tax_base`, `tax_amount`, `line_total`,
   `returned_qty`. *(Se copia `name`/`unit_price` para conservar el histórico
   aunque el producto cambie después.)*
-- **payments** — `sale_id`, `method` (`cash`|`card`|`bizum`), `amount`.
+- **payments** — `sale_id`, `method` (`cash`|`card`), `amount`.
 - **cash_sessions** — `opening_float`, `status`, `counted_cash`,
   `expected_cash`, `difference`, marcas de apertura/cierre.
 - **cash_movements** — `cash_session_id`, `type` (`in`|`out`), `amount`,
   `reason`.
-- **sale_returns / return_items** — devolución y sus líneas.
-- **stock_movements** — `product_id`, `type`
-  (`sale`|`return`|`adjustment`|`purchase`), `quantity`, `resulting_stock`,
-  `reference`.
+- **print_jobs** — trabajos de impresión original/copia/test y estado.
+- **cash_drawer_events** — aperturas de cajón por venta, prueba, manual o caja.
+- **audit_events** — trazabilidad de ventas, impresión, cajón, caja y ajustes.
 
 Un índice único parcial garantiza **una sola caja abierta** a la vez
-(`uniq_open_cash`). Los números de ticket/devolución usan **secuencias**.
+(`uniq_open_cash`). Los números de ticket usan **secuencias**.
 
 ---
 
 ## 4. Flujo principal de venta (detallado)
 
 ```
-login → ¿caja abierta? ──no──► abrir caja (fondo)
+sesión de dispositivo → operador → ¿caja abierta? ──no──► abrir caja (fondo)
    │ sí
    ▼
 buscar/escanear ─► añadir línea ─► (±cantidad, descuento*, precio*) 
    ▼
-COBRAR ─► método (efectivo/tarjeta/bizum/mixto) ─► validar ─► confirmar
+COBRAR ─► método (efectivo/tarjeta/mixto) ─► validar ─► confirmar
    ▼
-process_sale (atómico): inserta venta+líneas+pagos, descuenta stock,
-                         registra movimientos de stock
+process_sale (atómico): inserta venta+líneas+pagos y datos fiscales
    ▼
-recibo (imprimible) ─► nueva venta
+impresión ESC/POS ─► cajón si efectivo ─► auditoría ─► nueva venta
 ```
 `*` requiere permiso.
 
@@ -169,10 +166,8 @@ En **modo Supabase**, el acceso a datos se reparte entre:
 
 | Función | Entrada | Efecto |
 |---|---|---|
-| `process_sale(payload jsonb)` | venta completa | Inserta venta, líneas y pagos; descuenta stock; registra movimientos. Devuelve `sale_id`. |
-| `process_return(payload jsonb)` | devolución | Inserta devolución y líneas; suma `returned_qty`; reintegra stock; actualiza estado de la venta. |
+| `process_sale(payload jsonb)` | venta completa | Inserta venta, líneas y pagos; genera numeración fiscal y auditoría. Devuelve `sale_id`. |
 | `close_cash_session(id,user,counted,note)` | cierre | Calcula efectivo previsto y descuadre; cierra la sesión. |
-| `adjust_stock(product,new,reason,user)` | ajuste | Fija stock y registra el movimiento. |
 
 La interfaz `Repository` (en `src/data/repository.ts`) es el **contrato
 equivalente** que también cumple el modo local; sirve como especificación de la
@@ -190,13 +185,10 @@ equivalente** que también cumple el modo local; sirve como especificación de l
 - **Ticket:** suma de bases, cuotas y totales con **desglose de IVA por tipo**.
 - **Cobro:** la suma de pagos registrados **debe igualar el total**. El exceso
   solo es válido si proviene de **efectivo** y se devuelve como **cambio** (no
-  se almacena como pago). Tarjeta/Bizum se cobran exactos.
+  se almacena como pago). Tarjeta se cobra exacta.
 - **Caja:** `efectivo previsto = fondo + ventas en efectivo + entradas −
-  salidas − devoluciones en efectivo`. Cierre **a ciegas**: el descuadre se
+  salidas`. Cierre **a ciegas**: el descuadre se
   muestra tras introducir el conteo.
-- **Stock:** cada venta descuenta y cada devolución (con reintegro) suma;
-  ambos dejan rastro en `stock_movements`. Productos `track_stock=false`
-  (servicios de revelado) no afectan al inventario.
 
 ---
 
@@ -204,30 +196,27 @@ equivalente** que también cumple el modo local; sirve como especificación de l
 
 - No se puede vender con la **caja cerrada**.
 - Cantidades > 0; el descuento se acota a 0–100 %; el precio no es negativo.
-- Aviso visible si la cantidad supera el stock disponible (no bloquea, decide
-  el dependiente).
 - Cobro no confirmable si los pagos no cubren el total; en mixto,
-  tarjeta+Bizum no pueden superar el total.
-- Devolución: cantidad por línea acotada a lo realmente pendiente
-  (`quantity − returned_qty`); motivo obligatorio.
+  tarjeta no puede superar el total.
 
 ---
 
 ## 8. Seguridad
 
-- **Autenticación:** Supabase Auth (email+contraseña) en producción; modo local
-  con usuario+PIN solo para uso sin backend.
+- **Autenticación:** el shell Electron lee la cuenta de dispositivo desde
+  `device.json` y abre sesión de Supabase automáticamente. El operador visible
+  se elige en la cabecera; en modo local se usan los operadores semilla.
 - **Autorización por capas:**
   - UI: la navegación y los botones sensibles se ocultan por permiso.
   - Rutas: `RequirePermission` impide el acceso directo por URL.
   - Datos: **Row Level Security** activada en todas las tablas. La política base
     permite operar a usuarios autenticados; debe **endurecerse** (p. ej.
-    limitar `profiles`/`settings` a `admin`, o `process_return` a roles con
+    limitar `profiles`/`settings` a `admin`, o acciones sensibles a roles con
     permiso) mediante políticas que consulten el `role` del perfil.
-- **Integridad:** las operaciones de dinero/stock son funciones `SECURITY
+- **Integridad:** las operaciones de venta/caja son funciones `SECURITY
   DEFINER` del servidor, no cálculos confiados al cliente.
-- **Trazabilidad:** ventas, devoluciones y movimientos de stock/caja registran
-  usuario y fecha.
+- **Trazabilidad:** ventas, impresión, cajón y movimientos de caja registran
+  usuario, fecha y metadatos.
 
 > Recomendación de endurecimiento: crear una función `auth_role()` que lea
 > `profiles.role` del usuario actual y usarla en las políticas RLS de escritura.
@@ -239,8 +228,8 @@ equivalente** que también cumple el modo local; sirve como especificación de l
 1. **Endurecer RLS** por rol (lo más prioritario antes de producción real).
 2. **Multi-tienda:** añadir `store_id` a las tablas operativas y a `profiles`;
    incluirlo en políticas e índices.
-3. **Impresión térmica:** integrar impresora de tickets (ESC/POS) y cajón
-   portamonedas; ya existe la vista `Receipt` lista para imprimir.
+3. **Impresión térmica:** la integración ESC/POS y el cajón ya viven en el
+   shell Electron; seguir ampliando compatibilidad por modelo si hace falta.
 4. **Facturación:** emisión de factura simplificada/completa y series; base de
    datos ya guarda IVA desglosado y datos fiscales del cliente.
 5. **Offline-first con Supabase:** cola de operaciones y sincronización para

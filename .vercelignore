@@ -1,0 +1,12 @@
+.env
+.env.*
+/node_modules
+/dist
+/dist-app
+/.git
+/.claude
+/docs
+/electron
+/supabase
+*.tsbuildinfo
+npm-debug.log*
