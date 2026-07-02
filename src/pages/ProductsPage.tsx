@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react';
 import { History, Pencil, Plus, Search, Tags, Trash2 } from 'lucide-react';
 import type { Category, IvaRate, Product } from '@/domain/types';
 import { useCategories, useDeleteCategory, useDeleteProduct, useProductPriceHistory, useProducts, useSaveCategory, useSaveProduct } from '@/hooks/data';
-import { formatMoney } from '@/domain/money';
+import { formatMoney, parseDecimal } from '@/domain/money';
 import { formatDateTime } from '@/lib/format';
 import { validateProduct } from '@/domain/products';
 import { Button, Field, Modal, PageHeader, Spinner, cn, inputClass } from '@/components/ui';
@@ -205,8 +205,8 @@ function ProductFormModal({ product, all, categories, onClose, onSave, saving }:
   const isNew = !product.id;
   const productToSave: Product = {
     ...form,
-    price: price.trim() === '' ? 0 : Number(price),
-    cost: cost.trim() === '' ? undefined : Number(cost),
+    price: price.trim() === '' ? 0 : parseDecimal(price),
+    cost: cost.trim() === '' ? undefined : parseDecimal(cost),
   };
   const validation = validateProduct(productToSave, all, product.id || undefined);
   const { data: priceHistory = [] } = useProductPriceHistory(product.id || undefined);
@@ -236,10 +236,10 @@ function ProductFormModal({ product, all, categories, onClose, onSave, saving }:
         </div>
         <Field label="SKU / Referencia"><input className={inputClass} value={form.sku ?? ''} onChange={(e) => set('sku', e.target.value)} /></Field>
         <div>
-          <Field label="PVP (€, IVA incl.)"><input type="number" min={0} step="0.01" className={inputClass} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
+          <Field label="PVP (€, IVA incl.)"><input type="text" inputMode="decimal" placeholder="0,00" className={inputClass} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
           {validation.errors.price && <p className="mt-1 text-xs text-rose-600">{validation.errors.price}</p>}
         </div>
-        <Field label="Coste (€)"><input type="number" min={0} step="0.01" className={inputClass} value={cost} onChange={(e) => setCost(e.target.value)} /></Field>
+        <Field label="Coste (€)"><input type="text" inputMode="decimal" placeholder="0,00" className={inputClass} value={cost} onChange={(e) => setCost(e.target.value)} /></Field>
         <Field label="IVA">
           <select className={inputClass} value={form.ivaRate} onChange={(e) => set('ivaRate', Number(e.target.value) as IvaRate)}>
             {[21, 10, 4, 0].map((r) => <option key={r} value={r}>{r}%</option>)}

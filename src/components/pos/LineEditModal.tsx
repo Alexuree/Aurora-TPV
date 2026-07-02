@@ -6,7 +6,7 @@ import type { CartLine } from '@/domain/types';
 import { useCart } from '@/store/cartStore';
 import { useAuth } from '@/store/authStore';
 import { computeLine } from '@/domain/cart';
-import { formatMoney } from '@/domain/money';
+import { formatMoney, parseDecimal } from '@/domain/money';
 import { Button, Field, Modal, inputClass } from '@/components/ui';
 import { Lock } from 'lucide-react';
 
@@ -18,7 +18,9 @@ export function LineEditModal({ line, onClose }: { line: CartLine; onClose: () =
 
   const [qty, setQty] = useState(line.quantity);
   const [discount, setDisc] = useState(line.discountPct);
-  const [price, setPrice] = useState(line.unitPrice);
+  // Precio como texto para admitir coma o punto indistintamente.
+  const [priceStr, setPriceStr] = useState(String(line.unitPrice));
+  const price = Math.max(0, parseDecimal(priceStr) || 0);
 
   const preview = computeLine({ ...line, quantity: qty, discountPct: discount, unitPrice: price });
 
@@ -77,12 +79,12 @@ export function LineEditModal({ line, onClose }: { line: CartLine; onClose: () =
         <Field label="Precio unitario (€)" hint={!canPrice ? 'No tienes permiso para modificar precios' : `PVP original: ${formatMoney(line.basePrice)}`}>
           <div className="relative">
             <input
-              type="number"
-              min={0}
-              step="0.01"
-              value={price}
+              type="text"
+              inputMode="decimal"
+              placeholder="0,00"
+              value={priceStr}
               disabled={!canPrice}
-              onChange={(e) => setPrice(Math.max(0, Number(e.target.value)))}
+              onChange={(e) => setPriceStr(e.target.value)}
               className={`${inputClass} ${!canPrice ? 'bg-slate-100 text-slate-400' : ''}`}
             />
             {!canPrice && <Lock className="absolute right-3 top-3 text-slate-400" size={18} />}

@@ -257,8 +257,8 @@ export function SalePage() {
           </div>
         )}
 
-        {/* Categorías */}
-        <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+        {/* Categorías (grandes para uso táctil) */}
+        <div className="mb-3 flex gap-2.5 overflow-x-auto pb-1.5">
           <Chip active={categoryId === 'all'} onClick={() => setCategoryId('all')} label="Todo" />
           {categories.filter((c) => c.active).map((c) => (
             <Chip key={c.id} active={categoryId === c.id} onClick={() => setCategoryId(c.id)} label={c.name} color={c.color} />
@@ -322,11 +322,11 @@ function Chip({ active, onClick, label, color }: { active: boolean; onClick: () 
     <button
       onClick={onClick}
       className={cn(
-        'flex shrink-0 items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition',
+        'flex shrink-0 items-center gap-2 rounded-2xl border px-6 py-3.5 text-base font-semibold transition',
         active ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
       )}
     >
-      {color && <span className="h-2 w-2 rounded-full" style={{ background: color }} />}
+      {color && <span className="h-3 w-3 rounded-full" style={{ background: color }} />}
       {label}
     </button>
   );

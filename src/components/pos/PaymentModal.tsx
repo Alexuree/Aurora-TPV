@@ -28,13 +28,14 @@ interface Props {
 }
 
 const MODES: { id: Mode; label: string; icon: typeof Banknote }[] = [
-  { id: 'cash', label: 'Efectivo', icon: Banknote },
   { id: 'card', label: 'Tarjeta', icon: CreditCard },
+  { id: 'cash', label: 'Efectivo', icon: Banknote },
   { id: 'mixed', label: 'Mixto', icon: Split },
 ];
 
 export function PaymentModal({ total, submitting, onClose, onConfirm }: Props) {
-  const [mode, setMode] = useState<Mode>('cash');
+  // Por defecto se cobra con TARJETA (es la pantalla que aparece primero).
+  const [mode, setMode] = useState<Mode>('card');
   const [cashStr, setCashStr] = useState('');
   const [mixed, setMixed] = useState<Record<PaymentMethod, string>>({ cash: '', card: '' });
 
