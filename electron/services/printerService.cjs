@@ -203,11 +203,11 @@ async function getPrinters() {
 
 async function printReceipt(payload, cfg) {
   const copies = Math.max(1, Number(cfg && cfg.copies) || 1);
-  const isCopy = payload && payload.type === 'COPY';
+  const singleCopyDocument = payload && (payload.type === 'COPY' || payload.type === 'GIFT');
   const bytes = escpos.buildReceiptBytes(payload, cfg);
   let last = { ok: true };
-  // Las COPIAS se imprimen siempre una sola vez.
-  const n = isCopy ? 1 : copies;
+  // Las copias y tickets regalo son acciones especiales: siempre una impresión.
+  const n = singleCopyDocument ? 1 : copies;
   for (let i = 0; i < n; i++) {
     last = await sendBytes(bytes, cfg);
     if (!last.ok) return last;

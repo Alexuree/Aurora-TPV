@@ -1,10 +1,10 @@
 // Historial de ventas con filtros por fecha y búsqueda. Ver/imprimir recibo.
 
-import { useState } from 'react';
-import { Ban, Eye, Printer, RotateCw, Search, UserRound } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Ban, Eye, Gift, Printer, RotateCw, Search, UserRound } from 'lucide-react';
 import type { Customer, Sale, SaleStatus } from '@/domain/types';
 import { useAssignSaleCustomer, useSales, useSetSalePrintStatus, useSettings } from '@/hooks/data';
-import { usePrinterConfig, useReprintTicket } from '@/hooks/pos';
+import { usePrintGiftTicket, usePrinterConfig, useReprintTicket } from '@/hooks/pos';
 import { useAuth } from '@/store/authStore';
 import { snapshotFromCustomer } from '@/domain/customers';
 import { formatMoney } from '@/domain/money';
@@ -29,6 +29,8 @@ export function SalesHistoryPage() {
   const [range, setRange] = useState<Range>('today');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Sale | null>(null);
+  const [previewType, setPreviewType] = useState<'ORIGINAL' | 'GIFT'>('ORIGINAL');
+  const [customerError, setCustomerError] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Sale | null>(null);
   const [customerTarget, setCustomerTarget] = useState<Sale | null>(null);
   const { data: settings } = useSettings();
@@ -36,11 +38,17 @@ export function SalesHistoryPage() {
   const setPrintStatus = useSetSalePrintStatus();
   const assignCustomer = useAssignSaleCustomer();
   const reprint = useReprintTicket();
+  const printGift = usePrintGiftTicket();
   const can = useAuth((s) => s.can);
   const user = useAuth((s) => s.user);
 
   const filter = range === 'today' ? { from: startOfToday() } : range === 'week' ? { from: daysAgo(7) } : {};
   const { data: sales = [], isLoading } = useSales({ ...filter, search: search || undefined });
+
+  useEffect(() => {
+    setPreviewType('ORIGINAL');
+    setCustomerError(null);
+  }, [selected?.id]);
 
   const total = sales.filter((s) => s.status !== 'cancelled').reduce((a, s) => a + s.total, 0);
   const lastSale = sales.find((s) => s.status !== 'cancelled') ?? null;
@@ -60,18 +68,35 @@ export function SalesHistoryPage() {
     setPrintStatus.mutate({ id: saleToPrint.id, status: res.ok ? 'printed' : 'failed' });
   };
 
+  const printGiftTicket = async (s: Sale) => {
+    const latest = await repo.getSale(s.id).catch(() => null);
+    const saleToPrint = latest ?? s;
+    if (selected?.id === saleToPrint.id && latest) setSelected(saleToPrint);
+    if (isDesktopPrinting() && printerConfig && settings) {
+      await printGift.mutateAsync({ sale: saleToPrint, settings, config: printerConfig });
+    }
+  };
+
   const assignCustomerToSale = async (customer: Customer | null) => {
     if (!customerTarget) return;
-    const updated = await assignCustomer.mutateAsync({
-      saleId: customerTarget.id,
-      userId: user?.id,
-      userName: user?.fullName,
-      customerId: customer?.id ?? null,
-      customerName: customer?.name ?? 'Cliente mostrador',
-      customerSnapshot: customer ? snapshotFromCustomer(customer) : null,
-    });
-    setCustomerTarget(null);
-    setSelected(updated);
+    setCustomerError(null);
+    try {
+      const updated = await assignCustomer.mutateAsync({
+        saleId: customerTarget.id,
+        userId: user?.id,
+        userName: user?.fullName,
+        customerId: customer?.id ?? null,
+        customerName: customer?.name ?? 'Cliente mostrador',
+        customerSnapshot: customer ? snapshotFromCustomer(customer) : null,
+      });
+      const refreshed = await repo.getSale(updated.id).catch(() => null);
+      setCustomerTarget(null);
+      setSelected(refreshed ?? updated);
+      setPreviewType('ORIGINAL');
+    } catch (error) {
+      setCustomerTarget(null);
+      setCustomerError(error instanceof Error ? error.message : 'No se pudo asignar el cliente');
+    }
   };
 
   // Solo se puede anular: con permiso de venta, no anulada y del día actual.
@@ -169,10 +194,23 @@ export function SalesHistoryPage() {
                 <UserRound size={16} /> Cliente
               </Button>
             )}
-            <Button variant="outline" className="flex-1" onClick={() => printTicket(selected)}><Printer size={18} /> Imprimir</Button>
+            {selected.status !== 'cancelled' && (
+              <Button variant="outline" className="flex-1" onClick={() => setPreviewType(previewType === 'GIFT' ? 'ORIGINAL' : 'GIFT')}>
+                <Gift size={16} /> {previewType === 'GIFT' ? 'Ver normal' : 'Ticket regalo'}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => previewType === 'GIFT' ? printGiftTicket(selected) : printTicket(selected)}
+              disabled={previewType === 'GIFT' && (!isDesktopPrinting() || !printerConfig || printGift.isPending)}
+            >
+              <Printer size={18} /> {previewType === 'GIFT' ? 'Imprimir regalo' : 'Imprimir'}
+            </Button>
           </div>
         }>
-          <div className="rounded-xl border border-slate-200"><Receipt sale={selected} settings={settings} /></div>
+          {customerError && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{customerError}</p>}
+          <div className="rounded-xl border border-slate-200"><Receipt sale={selected} settings={settings} type={previewType} /></div>
         </Modal>
       )}
 

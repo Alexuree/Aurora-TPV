@@ -102,6 +102,10 @@ function receiptCustomer(sale: Sale): ReceiptCustomerPayload | null {
     address: snapshotValue(snap, 'address'),
     postalCode: snapshotValue(snap, 'postalCode', 'postal_code'),
     city: snapshotValue(snap, 'city'),
+    province: snapshotValue(snap, 'province'),
+    country: snapshotValue(snap, 'country'),
+    phone: snapshotValue(snap, 'phone'),
+    email: snapshotValue(snap, 'email'),
   };
 }
 
@@ -115,6 +119,7 @@ export function buildStorePayload(settings: Settings): ReceiptStorePayload {
     taxId: settings.taxId,
     address: settings.address,
     phone: settings.phone,
+    email: settings.email,
     footer: settings.ticketFooter || undefined,
     legalText: settings.legalText || undefined,
   };
@@ -127,9 +132,9 @@ export function buildStorePayload(settings: Settings): ReceiptStorePayload {
 export function buildReceiptPayload(
   sale: Sale,
   settings: Settings,
-  type: 'ORIGINAL' | 'COPY' | 'TEST' = 'ORIGINAL',
+  type: 'ORIGINAL' | 'COPY' | 'TEST' | 'GIFT' = 'ORIGINAL',
 ): ReceiptPayload {
-  const qrText = settings.enableFiscalQr && sale.fiscalHash ? fiscalQrText(sale, settings) : null;
+  const qrText = type !== 'GIFT' && settings.enableFiscalQr && sale.fiscalHash ? fiscalQrText(sale, settings) : null;
   const customer = receiptCustomer(sale);
   return {
     type,
@@ -137,6 +142,7 @@ export function buildReceiptPayload(
     sale: {
       number: sale.number,
       fiscalNumber: sale.fiscalNumber,
+      invoiceType: sale.invoiceType,
       createdAt: sale.createdAt,
       cashierName: sale.cashierName,
       customer,

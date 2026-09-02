@@ -1,241 +1,300 @@
-# Aurora TPV — Perfumería · Colonias · Fotografía
+# Aurora TPV
 
-TPV (Terminal Punto de Venta) profesional para tienda de mostrador, pensado
-para **uso real** y no como demo. Atiende a un cliente a la vez, con un flujo
-de venta rápido en pocos clics, catálogo, caja, informes, auditoría y usuarios
-con permisos.
+**Terminal de punto de venta híbrido para retail, con dominio desacoplado, persistencia local/Supabase e integración de hardware ESC/POS mediante Electron.**
 
-> **Arranca y vende en 1 minuto:** funciona en **modo local** (datos en el
-> navegador) sin montar nada. Cuando quieras, lo conectas a **Supabase**
-> (PostgreSQL en la nube) cambiando dos variables de entorno.
+Aurora TPV cubre el ciclo operativo de una tienda de mostrador: catálogo, venta táctil, cobro, caja, clientes, tickets, informes, auditoría, usuarios e impresión térmica. La solución puede ejecutarse inmediatamente en modo local o conectarse a PostgreSQL/Supabase para trabajar con una fuente de datos centralizada.
 
----
+> Alcance: solución funcional y demostrable. La base fiscal interna opera en modo `NO-VERIFACTU`; no equivale a certificación ni a cumplimiento VERI*FACTU final.
 
-## 1. Puesta en marcha
+## Resumen funcional
 
-Requisitos: **Node.js 18+** (probado con Node 24).
+| Área | Capacidades |
+|---|---|
+| Venta | Búsqueda, categorías, escáner USB, cantidades, descuentos, cambio de precio y ticket en tiempo real |
+| Cobro | Efectivo, tarjeta y pago mixto, cálculo de cambio y validación de importes |
+| Caja | Apertura, movimientos, cierre a ciegas, descuadre y resumen por método de pago |
+| Catálogo | CRUD de productos, SKU, código de barras, categorías e historial de precios |
+| Clientes | Registro, búsqueda, asignación a ventas y snapshot fiscal inmutable |
+| Tickets | Original, copia, ticket regalo, anulación trazable y reimpresión |
+| Hardware | Impresión ESC/POS 58/80 mm y apertura de cajón mediante comandos configurables |
+| Informes | Facturación, ticket medio, top productos, categorías, pagos, margen estimado y CSV |
+| Gobierno | Roles, permisos, RLS, auditoría operativa y eventos de impresión/cajón |
+| Resiliencia | Cola temporal de ventas pendientes y reintento al recuperar conexión |
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+    UI[React · Vite] --> HOOKS[Hooks + TanStack Query]
+    UI --> STORE[Zustand]
+    HOOKS --> CONTRACT[Repository interface]
+    CONTRACT --> LOCAL[LocalRepository]
+    CONTRACT --> CLOUD[SupabaseRepository]
+    LOCAL --> LS[(localStorage)]
+    CLOUD --> PG[(Supabase PostgreSQL)]
+    CLOUD --> RPC[RPC transaccionales]
+
+    UI --> SEAM[Printing seam]
+    SEAM -->|window.pos| PRELOAD[Electron preload]
+    PRELOAD --> IPC[IPC handlers]
+    IPC --> ESC[ESC/POS encoder]
+    ESC --> PRINTER[Impresora térmica]
+    ESC --> DRAWER[Cajón portamonedas]
+```
+
+### Principios de diseño
+
+- **Dominio puro:** cálculos monetarios, carrito, pagos, caja, ventas y permisos no dependen de React ni de Supabase.
+- **Persistencia intercambiable:** la UI consume un contrato `Repository`; el modo local y el modo cloud implementan la misma superficie.
+- **Operaciones críticas atómicas:** Supabase delega ventas y cierres en funciones PostgreSQL.
+- **Hardware fuera del renderer:** React nunca accede directamente a `ipcRenderer`; utiliza una API limitada expuesta por `preload`.
+- **Snapshots históricos:** líneas, precios y datos fiscales se copian en la venta para preservar su interpretación futura.
+- **Trazabilidad:** impresión, cajón, anulaciones, movimientos y cambios sensibles generan eventos auditables.
+
+## Flujo de venta
+
+```mermaid
+stateDiagram-v2
+    [*] --> CajaCerrada
+    CajaCerrada --> VentaActiva: abrir caja
+    VentaActiva --> VentaActiva: buscar o escanear producto
+    VentaActiva --> Cobro: cobrar
+    Cobro --> VentaActiva: validación fallida
+    Cobro --> VentaPersistida: pago válido
+    VentaPersistida --> Impresion: imprimir opcionalmente
+    Impresion --> VentaActiva: ticket nuevo
+    VentaPersistida --> VentaActiva: sin impresión
+    VentaPersistida --> PendienteSync: fallo de red
+    PendienteSync --> VentaPersistida: reintento confirmado
+```
+
+## Modos de ejecución
+
+### Modo local
+
+- no requiere backend ni cuenta;
+- usa datos semilla y `localStorage`;
+- permite probar el flujo completo de negocio en minutos;
+- resulta idóneo para demostraciones y desarrollo de interfaz.
+
+### Modo Supabase
+
+- usa PostgreSQL como fuente oficial de verdad;
+- incorpora autenticación de dispositivo y perfiles;
+- comparte catálogo, ventas y caja entre sesiones;
+- aplica RLS y RPC para las operaciones transaccionales;
+- mantiene una bandeja local temporal cuando una venta no puede enviarse.
+
+## Puesta en marcha rápida
+
+### Requisitos
+
+- Node.js 22.12 o superior.
+- npm 10 o superior.
+- Windows de 64 bits si se quiere utilizar Electron, impresión ESC/POS o el instalador NSIS.
+- Proyecto Supabase opcional.
 
 ```bash
-npm install      # instala dependencias
-npm run dev      # arranca en http://localhost:5173
+git clone <URL_DEL_REPOSITORIO>
+cd TPV_TIENDA
+npm install
+npm run dev
 ```
 
-Abre `http://localhost:5173`. En modo local ya hay catálogo de ejemplo
-(perfumes, colonias, material de fotografía) y tres operadores de prueba:
+Abre `http://localhost:5173`. Sin variables de Supabase la aplicación selecciona automáticamente el repositorio local.
 
-| Rol           | Usuario        |
-|---------------|----------------|
-| Administrador | `admin`        |
-| Encargado     | `encargado`    |
-| Dependiente   | `dependiente`  |
+### Comandos
 
-> La app ya no muestra pantalla de login: arranca con sesión de dispositivo y
-> permite cambiar el operador desde el selector superior.
+| Comando | Resultado |
+|---|---|
+| `npm run dev` | Servidor Vite con recarga en caliente |
+| `npm run test` | Suite Vitest en modo no interactivo |
+| `npm run typecheck` | Verificación TypeScript del workspace |
+| `npm run build` | Typecheck y bundle web de producción |
+| `npm run preview` | Previsualización del bundle |
+| `npm run app:dev` | Vite y Electron coordinados para desarrollo |
+| `npm run app:start` | Build local y arranque del shell Electron |
+| `npm run app:build` | Aplicación Windows desempaquetada |
+| `npm run app:installer` | Instalador NSIS para Windows x64 |
 
-### Flujo de venta
-1. Selecciona el operador si hace falta.
-2. **Abre la caja** con el saldo inicial (obligatorio para vender).
-3. Busca o **escanea** un producto → se añade al ticket.
-4. Ajusta cantidades / descuentos (según permisos).
-5. Pulsa **COBRAR** → elige método (efectivo/tarjeta/mixto) → confirma.
-6. Se genera el **recibo** (imprimible) y el TPV vuelve a una venta nueva.
+## Configuración
 
----
-
-## 2. Comandos
+Copia la plantilla y completa solo los valores necesarios:
 
 ```bash
-npm run dev        # desarrollo con recarga en caliente
-npm run build      # build de producción (typecheck + bundle en /dist)
-npm run preview    # sirve el build de producción
-npm run typecheck  # solo comprobación de tipos
-npm run app:installer # instalador Windows autocontenido para otro PC
+copy .env.example .env
 ```
 
----
+| Variable | Uso |
+|---|---|
+| `VITE_SUPABASE_URL` | URL pública del proyecto Supabase |
+| `VITE_SUPABASE_ANON_KEY` | Clave pública protegida por RLS |
+| `VITE_DATA_MODE` | `local`, `supabase` o `auto` |
+| `VITE_DEVICE_EMAIL` | Cuenta de dispositivo solo para desarrollo local |
+| `VITE_DEVICE_PASSWORD` | Contraseña de dispositivo; nunca en hosting público |
+| `VITE_DEFAULT_OPERATOR` | Operador mostrado inicialmente |
 
-## 3. Instalación en otro PC y actualizaciones por nube
+En un despliegue web público, las credenciales de dispositivo deben quedar vacías. El shell Electron las lee desde `device.json`, almacenado en cada terminal.
 
-El PC de la tienda no necesita Node.js, npm ni Git. Se instala una vez el
-**shell Electron** y este carga el renderer publicado en la nube. Cada commit
-desplegado en Vercel/Netlify/Cloudflare llega al TPV al abrir o recargar.
+## Base de datos Supabase
 
-Flujo recomendado:
+La ruta recomendada para un entorno nuevo es ejecutar `supabase/setup.sql`, que consolida esquema y datos semilla. Para evolución controlada están disponibles las migraciones individuales:
 
-1. Publica el renderer (`npm run build`, output `dist`) en un hosting estático.
-2. Genera el instalador con `npm run app:installer`.
-3. Instálalo en el PC nuevo.
-4. Edita el `device.json` local desde `Aurora TPV -> Abrir configuración del dispositivo`:
-
-```json
-{
-  "appUrl": "https://aurora-tpv.vercel.app/",
-  "deviceEmail": "terminal-1@tu-tienda.com",
-  "devicePassword": "contraseña-del-terminal",
-  "defaultOperator": "admin@tu-tienda.com"
-}
+```text
+0001  esquema inicial, perfiles, catálogo, ventas y caja
+0002  plantilla de ticket e impresión
+0003  anulaciones
+0004  totales de cierre
+0005  registro de clientes
+0006  historial de precios
+0007  retirada del stock del flujo operativo
+0008  simplificación de devoluciones y métodos de pago
+0009  modo fiscal y auditoría
+0010  cliente asignado a venta
+0011  impresión ESC/POS y cajón
+0012  codificación de impresora
+0013  ticket regalo
 ```
 
-La contraseña del dispositivo **no va en el bundle web público**. Consulta la
-guía completa en [`docs/DESKTOP_CLOUD_DEPLOYMENT.md`](docs/DESKTOP_CLOUD_DEPLOYMENT.md).
+Entidades principales:
 
----
-
-## 4. Modo Supabase (base de datos en la nube)
-
-1. Crea un proyecto gratuito en [supabase.com](https://supabase.com).
-2. En el **SQL Editor**, ejecuta en orden:
-   - `supabase/migrations/0001_initial_schema.sql`
-   - `supabase/seed.sql`
-3. Crea los usuarios en **Authentication → Users** (email + contraseña). El
-   `role` se asigna en su perfil; por defecto `cashier`. Para hacer admin a un
-   usuario, en SQL Editor:
-   ```sql
-   update profiles set role = 'admin' where username = 'tu@correo.com';
-   ```
-4. Copia `.env.example` a `.env` y rellena:
-   ```env
-   VITE_SUPABASE_URL=https://xxxx.supabase.co
-   VITE_SUPABASE_ANON_KEY=eyJhbGc...
-   ```
-5. Reinicia `npm run dev`. La app detecta la configuración y usa Supabase.
-   El acceso pasa a ser **email + contraseña**.
-
-> Sin variables de Supabase, la app sigue funcionando en modo local.
-
----
-
-## 5. Estructura del proyecto
-
-```
-TPV_TIENDA/
-├─ public/                 logo.svg, favicon.svg
-├─ supabase/
-│  ├─ migrations/0001_initial_schema.sql   esquema + RLS + funciones RPC
-│  └─ seed.sql                              datos de ejemplo
-├─ src/
-│  ├─ config/env.ts        decide modo local/supabase
-│  ├─ domain/              LÓGICA DE NEGOCIO pura (sin framework)
-│  │  ├─ types.ts          modelo de datos
-│  │  ├─ money.ts          redondeo/formato monetario
-│  │  ├─ cart.ts           cálculo de ticket (IVA, descuentos, totales)
-│  │  ├─ payments.ts       cobro, cambio, pago mixto
-│  │  └─ permissions.ts    matriz rol → permisos
-│  ├─ data/                PERSISTENCIA (patrón Repository)
-│  │  ├─ repository.ts     contrato (interfaz)
-│  │  ├─ local/            implementación localStorage (+ seed)
-│  │  ├─ supabase/         implementación Supabase
-│  │  └─ index.ts          factory: elige implementación por entorno
-│  ├─ store/               estado (Zustand): auth, carrito
-│  ├─ hooks/data.ts        acceso a datos con TanStack Query
-│  ├─ components/
-│  │  ├─ ui/               kit reutilizable (Button, Modal, …)
-│  │  ├─ layout/           AppShell (navegación + cabecera)
-│  │  └─ pos/              componentes del TPV (rejilla, ticket, cobro…)
-│  ├─ pages/               una página por módulo
-│  ├─ App.tsx              router + guardas de acceso
-│  └─ main.tsx             punto de entrada
-└─ docs/ARCHITECTURE.md    diseño técnico detallado
+```text
+auth.users 1──1 profiles ──> roles ──< role_permissions
+categories 1──< products ──< sale_items >── sales
+customers 1──< sales >──1 cash_sessions
+sales 1──< payments
+sales 1──< print_jobs
+cash_sessions 1──< cash_movements
+cash_sessions 1──< cash_drawer_events
+audit_events
+settings
 ```
 
-La regla clave: **`domain/` no depende de React ni de Supabase**, y la UI nunca
-conoce de dónde salen los datos (solo habla con `Repository`). Esto permite
-cambiar de almacenamiento o reutilizar la lógica sin tocar la interfaz.
+Las RPC principales son:
 
----
+- `process_sale(payload jsonb)`: persiste cabecera, líneas, pagos, numeración y auditoría como una unidad;
+- `close_cash_session(...)`: calcula efectivo esperado, registra conteo y cierra la sesión.
 
-## 6. Funcionalidades
+## Reglas de negocio
 
-- **Venta:** búsqueda/escáner, categorías, ticket en tiempo real, descuentos y
-  cambio de precio por permiso, IVA desglosado, aparcar implícito (cancelar).
-- **Cobro:** efectivo (con cambio y entregas rápidas), tarjeta y mixto.
-- **Catálogo:** productos, categorías, códigos de barras, edición de precios e
-  historial de cambios.
-- **Caja:** apertura con fondo, entradas/salidas, cierre a ciegas con descuadre
-  y resumen por método de pago.
-- **Tickets:** impresión térmica ESC/POS, reimpresión, anulación y auditoría.
-- **Informes:** facturación, ticket medio, top productos, por categoría y método
-  de pago, beneficio estimado, exportación CSV.
-- **Usuarios:** roles Administrador / Encargado / Dependiente con permisos.
+- No se permite vender con la caja cerrada.
+- Cantidades y precios deben ser positivos; los descuentos se acotan entre 0 y 100 %.
+- Los importes se redondean a dos decimales en los límites del dominio.
+- La suma de pagos debe cubrir exactamente el total, salvo efectivo entregado que produce cambio.
+- La tarjeta se cobra por el importe exacto que le corresponde.
+- El efectivo esperado considera fondo, ventas en efectivo, entradas y salidas.
+- El cierre es a ciegas: el sistema revela el descuadre después del recuento.
+- Las anulaciones no eliminan tickets; preservan estado, motivo, usuario y fecha.
+- El snapshot de cliente evita que una edición posterior reescriba el histórico fiscal.
 
-Consulta [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) para el diseño completo.
+## Impresión ESC/POS y cajón
 
----
+El shell Electron genera bytes ESC/POS sin introducir dependencias nativas en el renderer. Admite:
 
-## 7. Impresión térmica ESC/POS y cajón registrador
+- perfiles de 58 y 80 mm;
+- codificaciones configurables y tratamiento gráfico del símbolo euro;
+- logo, cabecera, pie, desglose fiscal y política de cambios;
+- corte de papel;
+- apertura de cajón mediante pulso configurable;
+- original, copia, prueba, cierre de caja y ticket regalo;
+- transporte Windows y salida a archivo para diagnóstico;
+- registro de trabajos y errores.
 
-La app de **escritorio** (Electron) imprime tickets reales en impresoras
-térmicas ESC/POS y abre el **cajón registrador** conectado a la impresora.
-No usa el diálogo del navegador como sistema principal: genera los bytes
-ESC/POS y los envía por IPC seguro (`window.pos`) sin dependencias nativas.
+En navegador, el sistema utiliza la ruta de impresión disponible o informa de la ausencia de hardware. Las pruebas del encoder ESC/POS no requieren una impresora física.
 
-### Arquitectura
+## Distribución de escritorio y actualizaciones
 
+La solución separa dos artefactos:
+
+1. **Renderer web:** se publica en Vercel, Netlify, Cloudflare Pages u hosting estático.
+2. **Shell Electron:** se instala una vez en el equipo de tienda y carga el renderer remoto.
+
+Las actualizaciones de React, lógica de negocio y pantallas llegan con el siguiente despliegue web. Solo los cambios en Electron, IPC, impresión o configuración de dispositivo requieren un nuevo instalador. Si la URL remota no está disponible, el shell intenta cargar el bundle local incluido.
+
+Consulta `docs/DESKTOP_CLOUD_DEPLOYMENT.md` para el procedimiento completo.
+
+## Estructura del repositorio
+
+```text
+src/
+├── components/              # UI reutilizable, layout y flujo POS
+├── config/                  # Selección de entorno y modo de datos
+├── data/
+│   ├── local/               # Repository sobre localStorage
+│   └── supabase/            # Repository cloud y cola pendiente
+├── domain/                  # Reglas puras y modelos de negocio
+├── hooks/                   # Orquestación de casos de uso
+├── lib/                     # Scanner, impresión, formato y Supabase
+├── pages/                   # Venta, caja, clientes, informes y ajustes
+└── store/                   # Estado de sesión y carrito
+electron/
+├── escpos/                  # Encoder y pruebas de protocolo
+├── ipc/                     # Frontera de mensajes
+└── services/                # Impresora y cajón
+supabase/
+├── migrations/              # Evolución incremental
+├── seed.sql                 # Datos de demostración
+└── setup.sql                # Bootstrap consolidado
+docs/
+├── ARCHITECTURE.md
+├── DESKTOP_CLOUD_DEPLOYMENT.md
+└── VERIFACTU.md
 ```
-Renderer (React)                 Main (Electron, electron/)
-  hooks/pos.ts ─┐                 ipc/printerIpc.cjs  (handlers pos:*)
-  lib/printing  ├─ window.pos ──▶ services/printerService.cjs (transportes)
-  (payload)     ┘                 services/cashDrawerService.cjs
-                                   escpos/escpos.cjs  (bytes ESC/POS)
-```
 
-- El **renderer** construye el ticket como objeto plano (`buildReceiptPayload`)
-  y pasa la `PrinterConfig` en cada llamada. El **main es stateless**.
-- El renderer **nunca** toca `ipcRenderer`: solo la API acotada `window.pos`.
-- Toda impresión/apertura queda registrada (`print_jobs`, `cash_drawer_events`,
-  `audit_events`) y es consultable en **Auditoría** (solo administración).
-
-### Comandos de escritorio
+## Calidad
 
 ```bash
-npm run app:dev      # Vite + ventana Electron (desarrollo)
-npm run app:start    # build + ventana Electron
-npm run app:build    # genera dist-app/Aurora TPV-win32-x64/Aurora TPV.exe
+npm test
+npm run typecheck
+npm run build
 ```
 
-> En `npm run dev` (navegador) **no** hay acceso al hardware: las pruebas y la
-> impresión ESC/POS requieren la app de escritorio. La venta no se bloquea: el
-> ticket queda `pendiente` y puede imprimirse desde el diálogo del sistema.
+Línea base verificada:
 
-### Configurar una impresora térmica **USB**
+- 10 archivos de prueba superados;
+- 75 tests superados;
+- TypeScript sin errores;
+- build Vite de producción correcto;
+- pruebas de dominio, repositorios, escáner, caja, clientes y ESC/POS.
 
-1. Instala el **driver de Windows** de la impresora (Epson/Bixolon/genérica).
-   Debe aparecer en *Configuración → Impresoras y escáneres*.
-2. En la app: **Ajustes → Impresora y cajón** (`/ajustes/impresora`).
-3. Tipo de conexión: **Impresora de Windows (USB/instalada)**.
-4. Pulsa el botón de refrescar y **selecciona tu impresora** de la lista.
-5. Ajusta ancho de papel (58/80 mm), corte automático y copias. **Guardar**.
-6. Pulsa **Probar ticket** y **Ticket completo** para validar.
+El bundle actual emite una advertencia de tamaño superior a 500 kB para el chunk principal; el code-splitting por ruta queda como optimización de rendimiento, no como error funcional.
 
-### Configurar una impresora **de red (Ethernet/Wi-Fi)**
+## Seguridad
 
-1. Anota la **IP** de la impresora (suele imprimir un test al encender).
-2. Tipo de conexión: **Red (IP / Ethernet)**.
-3. Introduce **IP** y **puerto** (`9100` por defecto). **Guardar** y **Probar**.
+- `.env*`, `device.json`, metadatos locales, builds e instaladores están fuera de Git.
+- El contexto aislado de Electron expone solo `window.pos`, no `ipcRenderer` completo.
+- La contraseña del terminal reside en el equipo, no en el renderer desplegado.
+- Supabase mantiene RLS activa; las políticas deben endurecerse por rol antes de un despliegue multiusuario real.
+- Las operaciones sensibles se auditan y las anulaciones no destruyen el histórico.
+- Las credenciales incluidas en `VITE_*` forman parte del bundle; nunca se debe introducir una `service_role` en variables Vite.
 
-### Configurar y probar el **cajón registrador**
+## Alcance fiscal
 
-1. Conecta el cajón por **RJ11** a la impresora (no va al PC directamente).
-2. En **Ajustes → Impresora y cajón**, elige el **pin** (normalmente `2`; en
-   algunos modelos `5`) y activa *Abrir cajón en ventas en efectivo*.
-3. Pulsa **Probar cajón**. En cada venta en efectivo se abre automáticamente.
-4. Apertura manual con motivo desde **Caja → Abrir cajón** (queda auditada).
+El proyecto implementa numeración, desglose de IVA, modo fiscal interno, snapshots y encadenamiento de control, pero **no afirma cumplimiento VERI*FACTU**. Faltan, entre otros, el formato exacto AEAT, la huella reglamentaria, QR oficial, envío y gestión de respuestas, subsanaciones y validación legal/fiscal.
 
-### Migración de base de datos
+La evaluación completa está documentada en `docs/VERIFACTU.md`.
 
-Modo Supabase: ejecuta `supabase/migrations/0011_pos_printing_cash_drawer.sql`
-(o el `supabase/setup.sql` completo, que ya lo incluye).
+## Límites conocidos
 
-### Limitaciones conocidas
+- La cola offline de Supabase cubre ventas pendientes, no todos los comandos operativos.
+- La idempotencia server-side de reintentos debe reforzarse antes de operación distribuida intensiva.
+- El fallback local no convierte Supabase en una base completamente offline.
+- El soporte ESC/POS puede requerir ajustes por modelo, driver y code page.
+- El despliegue productivo requiere políticas RLS específicas, backups y procedimientos fiscales.
 
-- **Solo Windows** probado (descubrimiento de impresoras vía PowerShell;
-  transporte serie vía `cmd`). Linux/macOS quedan pendientes.
-- **Logo raster** y **QR** son opcionales; el QR se imprime si la impresora lo
-  soporta. El logo raster no está implementado en v1 (se imprime el nombre).
-- Codificación `cp858`/`cp850` aproximada con `latin1` (sin `iconv`):
-  caracteres fuera de Latin-1 pueden no imprimirse correctamente.
-- Sin permisos nuevos: reimpresión y apertura manual del cajón requieren el
-  permiso `open_close_cash` (en esta instalación lo tienen admin, encargado **y
-  dependiente**). Todo queda registrado en auditoría.
-- Sin pruebas de hardware automatizadas: los tests cubren los **bytes** ESC/POS
-  y la lógica; valida con una impresora real desde *Probar ticket*.
+## Casos de uso demostrables
+
+- venta táctil completa con efectivo, tarjeta o mixto;
+- escaneo de códigos de barras con lector USB;
+- apertura y cierre de caja con descuadre;
+- alta de producto y trazabilidad de precio;
+- alta y asignación de cliente;
+- anulación y reimpresión de tickets;
+- ticket regalo y cierre en ESC/POS;
+- informes operativos y exportación CSV;
+- auditoría filtrable de eventos;
+- conmutación entre persistencia local y Supabase.
+
+---
+
+Aurora TPV es un ejercicio de ingeniería de producto orientado a dominio, integración de hardware y operación retail trazable.

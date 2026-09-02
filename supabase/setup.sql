@@ -823,7 +823,7 @@ create table if not exists print_jobs (
   id uuid primary key default gen_random_uuid(),
   sale_id uuid references sales(id) on delete set null,
   receipt_number bigint,
-  type text not null check (type in ('ORIGINAL','COPY','TEST')),
+  type text not null check (type in ('ORIGINAL','COPY','TEST','GIFT')),
   status text not null check (status in ('SUCCESS','FAILED','PENDING')),
   error_message text,
   printed_by uuid not null,

@@ -92,6 +92,7 @@ export function assignPendingSaleCustomer(input: AssignSaleCustomerInput): Sale 
     customerSnapshot: input.customerSnapshot ?? null,
     invoiceType: input.customerSnapshot?.taxId ? 'complete' : 'simplified',
     series: input.customerSnapshot?.taxId ? 'FC' : 'FS',
+    fiscalNumber: `${input.customerSnapshot?.taxId ? 'FC' : 'FS'}-${op.localSale.number}`,
   };
   writeQueue(queue);
   return op.localSale;

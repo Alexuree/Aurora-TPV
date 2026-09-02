@@ -16,7 +16,17 @@ export function CustomerPickerModal({ onClose, onSelect }: Props) {
   const saveCustomer = useSaveCustomer();
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: '', phone: '', email: '', taxId: '' });
+  const [form, setForm] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    taxId: '',
+    address: '',
+    postalCode: '',
+    city: '',
+    province: '',
+    country: '',
+  });
 
   const filtered = customers.filter(
     (c) => c.name.toLowerCase().includes(search.toLowerCase()) || (c.phone ?? '').includes(search),
@@ -30,6 +40,11 @@ export function CustomerPickerModal({ onClose, onSelect }: Props) {
       phone: form.phone || undefined,
       email: form.email || undefined,
       taxId: form.taxId || undefined,
+      address: form.address || undefined,
+      postalCode: form.postalCode || undefined,
+      city: form.city || undefined,
+      province: form.province || undefined,
+      country: form.country || undefined,
     });
     onSelect(saved);
     onClose();
@@ -83,6 +98,15 @@ export function CustomerPickerModal({ onClose, onSelect }: Props) {
             <Field label="NIF/CIF"><input className={inputClass} value={form.taxId} onChange={(e) => setForm({ ...form, taxId: e.target.value })} /></Field>
           </div>
           <Field label="Email"><input className={inputClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></Field>
+          <Field label="Dirección"><input className={inputClass} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Código postal"><input className={inputClass} value={form.postalCode} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} /></Field>
+            <Field label="Población"><input className={inputClass} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Provincia"><input className={inputClass} value={form.province} onChange={(e) => setForm({ ...form, province: e.target.value })} /></Field>
+            <Field label="País"><input className={inputClass} value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} /></Field>
+          </div>
           <div className="flex gap-2 pt-1">
             <Button variant="outline" block onClick={() => setCreating(false)}>Volver</Button>
             <Button block onClick={create} disabled={!form.name.trim() || saveCustomer.isPending}>Crear y asociar</Button>

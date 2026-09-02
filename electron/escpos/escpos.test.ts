@@ -196,6 +196,47 @@ describe('buildReceiptBytes', () => {
     const noQr = buildReceiptBytes({ type: 'ORIGINAL', store, sale }, { paperWidth: '80', autoCut: true, printQr: true });
     expect(indexOfSeq(noQr, [0x1d, 0x28, 0x6b])).toBe(-1);
   });
+
+  it('la factura completa incluye datos fiscales extendidos del cliente', () => {
+    const invoicedSale = {
+      ...sale,
+      invoiceType: 'complete',
+      fiscalNumber: 'FC-1042',
+      customer: {
+        name: 'Cliente Fiscal SL',
+        taxId: 'B87654321',
+        address: 'C/ Cliente 7',
+        postalCode: '28001',
+        city: 'Madrid',
+        province: 'Madrid',
+        country: 'Espana',
+        phone: '911 111 111',
+        email: 'facturas@cliente.test',
+      },
+    };
+    const buf = buildReceiptBytes({ type: 'COPY', store, sale: invoicedSale }, { paperWidth: '58', autoCut: true });
+    const text = buf.toString('latin1');
+    expect(text).toContain('Factura completa: FC-1042');
+    expect(text).toContain('Cliente Fiscal SL');
+    expect(text).toContain('B87654321');
+    expect(text).toContain('C/ Cliente 7 28001 Madrid');
+    expect(text).toContain('911 111 111');
+    expect(text).toContain('facturas@cliente.test');
+  });
+
+  it('el ticket regalo usa POS pero oculta importes, pagos y QR fiscal', () => {
+    const giftSale = { ...sale, qrText: 'https://x' };
+    const buf = buildReceiptBytes({ type: 'GIFT', store, sale: giftSale }, { paperWidth: '80', autoCut: true, printQr: true });
+    const text = buf.toString('latin1');
+    expect(text).toContain('TICKET REGALO');
+    expect(text).toContain('Sauvage EDT 100ml');
+    expect(text).toContain('Importes ocultos');
+    expect(text).not.toContain('99,90');
+    expect(text).not.toContain('TOTAL');
+    expect(text).not.toContain('Efectivo');
+    expect(indexOfSeq(buf, [0x1d, 0x28, 0x6b])).toBe(-1);
+    expect(indexOfSeq(buf, [0x1d, 0x56, 0])).toBeGreaterThan(-1);
+  });
 });
 
 describe('buildClosingReport', () => {

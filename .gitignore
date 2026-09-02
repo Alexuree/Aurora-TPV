@@ -22,10 +22,10 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Claude Code local settings (personales de la máquina)
-.claude/settings.local.json
+# Tooling local
+.claude/
+.vercel/
+/supabase/.temp/
 
 # Vite / TS
 *.tsbuildinfo
-
-.vercel/

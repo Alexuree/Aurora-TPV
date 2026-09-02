@@ -47,6 +47,7 @@ export function snapshotFromCustomer(c: Customer): CustomerSnapshot {
     postalCode: c.postalCode,
     city: c.city,
     province: c.province,
+    country: c.country,
     phone: c.phone,
     email: c.email,
   };

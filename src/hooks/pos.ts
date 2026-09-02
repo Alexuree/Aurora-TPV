@@ -32,6 +32,7 @@ function storePayload(settings?: Settings): ReceiptStorePayload {
     taxId: settings.taxId,
     address: settings.address,
     phone: settings.phone,
+    email: settings.email,
     footer: settings.ticketFooter || undefined,
     legalText: settings.legalText || undefined,
   };
@@ -183,6 +184,30 @@ export function useReprintTicket() {
         saleId: v.sale.id,
         receiptNumber: v.sale.number,
         type: 'COPY',
+        status: res.ok ? 'SUCCESS' : 'FAILED',
+        errorMessage: res.ok ? undefined : res.error,
+        printedBy: user?.id ?? v.sale.cashierId,
+      });
+      return res;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['printJobs'] });
+    },
+  });
+}
+
+/** Ticket regalo: impresión especial sin importes y sin abrir cajón. */
+export function usePrintGiftTicket() {
+  const qc = useQueryClient();
+  const user = useAuth((s) => s.user);
+  return useMutation({
+    mutationFn: async (v: { sale: Sale; settings: Settings; config: PrinterConfig }) => {
+      const payload = buildReceiptPayload(v.sale, v.settings, 'GIFT');
+      const res = isDesktopPrinting() ? await window.pos!.printReceipt(payload, v.config) : NO_DESKTOP;
+      await repo.recordPrintJob({
+        saleId: v.sale.id,
+        receiptNumber: v.sale.number,
+        type: 'GIFT',
         status: res.ok ? 'SUCCESS' : 'FAILED',
         errorMessage: res.ok ? undefined : res.error,
         printedBy: user?.id ?? v.sale.cashierId,

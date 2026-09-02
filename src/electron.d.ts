@@ -4,7 +4,7 @@
 // window.pos (IPC seguro). En web/dev sin Electron, window.pos es undefined.
 // =====================================================================
 
-import type { PrinterConfig } from '@/domain/types';
+import type { InvoiceType, PrinterConfig } from '@/domain/types';
 
 /* ------------------ Contrato del payload del ticket ---------------- */
 // El renderer construye este objeto plano a partir de Sale + Settings y lo
@@ -18,6 +18,7 @@ export interface ReceiptStorePayload {
   taxId?: string;
   address?: string;
   phone?: string;
+  email?: string;
   footer?: string;
   legalText?: string;
 }
@@ -28,6 +29,10 @@ export interface ReceiptCustomerPayload {
   address?: string;
   postalCode?: string;
   city?: string;
+  province?: string;
+  country?: string;
+  phone?: string;
+  email?: string;
 }
 
 export interface ReceiptItemPayload {
@@ -46,6 +51,7 @@ export interface ReceiptTaxRow {
 export interface ReceiptSalePayload {
   number?: number;
   fiscalNumber?: string;
+  invoiceType?: InvoiceType;
   createdAt: string;
   cashierName?: string;
   customer?: ReceiptCustomerPayload | null;
@@ -62,7 +68,7 @@ export interface ReceiptSalePayload {
 }
 
 export interface ReceiptPayload {
-  type: 'ORIGINAL' | 'COPY' | 'TEST';
+  type: 'ORIGINAL' | 'COPY' | 'TEST' | 'GIFT';
   store: ReceiptStorePayload;
   sale: ReceiptSalePayload;
 }

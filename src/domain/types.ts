@@ -106,6 +106,7 @@ export interface CustomerSnapshot {
   postalCode?: string;
   city?: string;
   province?: string;
+  country?: string;
   phone?: string;
   email?: string;
 }
@@ -373,7 +374,7 @@ export interface PrinterConfig {
   updatedAt: ISODate;
 }
 
-export type PrintJobType = 'ORIGINAL' | 'COPY' | 'TEST';
+export type PrintJobType = 'ORIGINAL' | 'COPY' | 'TEST' | 'GIFT';
 export type PrintJobStatus = 'SUCCESS' | 'FAILED' | 'PENDING';
 
 /** Registro de cada intento de impresión (trazabilidad). */

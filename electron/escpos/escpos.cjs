@@ -12,11 +12,11 @@
 //
 // Contrato del payload (lo construye el renderer a partir de Sale+Settings):
 //   {
-//     type: 'ORIGINAL' | 'COPY' | 'TEST',
-//     store: { name, logoData, headerText, legalName, taxId, address, phone, footer, legalText },
+//     type: 'ORIGINAL' | 'COPY' | 'TEST' | 'GIFT',
+//     store: { name, logoData, headerText, legalName, taxId, address, phone, email, footer, legalText },
 //     sale: {
-//       number, fiscalNumber, createdAt (ISO), cashierName,
-//       customer: { name, taxId, address, postalCode, city } | null,
+//       number, fiscalNumber, invoiceType, createdAt (ISO), cashierName,
+//       customer: { name, taxId, address, postalCode, city, province, country, phone, email } | null,
 //       items: [{ quantity, name, discountPct, lineTotal }],
 //       taxBreakdown: [{ rate, base, tax }],
 //       subtotal, discountTotal, taxTotal, total,
@@ -376,6 +376,8 @@ function buildReceiptBytes(payload, config) {
   const sale = payload.sale || {};
   const isCopy = payload.type === 'COPY';
   const isTest = payload.type === 'TEST';
+  const isGift = payload.type === 'GIFT';
+  const isCompleteInvoice = sale.invoiceType === 'complete' || Boolean(sale.customer && sale.customer.taxId);
 
   out(CMD.INIT);
   // Selecciona la página de códigos en la impresora (ESC t n) para que
@@ -408,6 +410,7 @@ function buildReceiptBytes(payload, config) {
   if (store.legalName || store.taxId) line([store.legalName, store.taxId].filter(Boolean).join(' · '));
   if (store.address) for (const l of wrap(store.address, width)) line(l);
   if (store.phone) line(`Tel. ${store.phone}`);
+  if (isCompleteInvoice && store.email) for (const l of wrap(store.email, width)) line(l);
 
   // --- Datos del ticket ---
   out(CMD.ALIGN_LEFT);
@@ -424,7 +427,7 @@ function buildReceiptBytes(payload, config) {
   }
 
   line(padLine(`Ticket #${sale.number ?? ''}`, formatDateTime(sale.createdAt), width));
-  if (sale.fiscalNumber) line(`Factura: ${sale.fiscalNumber}`);
+  if (sale.fiscalNumber) line(`${isCompleteInvoice ? 'Factura completa' : 'Factura'}: ${sale.fiscalNumber}`);
   if (sale.cashierName) line(`Atendido por ${sale.cashierName}`);
 
   // --- Cliente (snapshot fiscal) ---
@@ -436,10 +439,29 @@ function buildReceiptBytes(payload, config) {
     if (sale.customer.taxId) line(`NIF/CIF: ${sale.customer.taxId}`);
     const addr = [sale.customer.address, sale.customer.postalCode, sale.customer.city].filter(Boolean).join(' ');
     if (addr) for (const l of wrap(addr, width)) line(l);
+    if (sale.customer.province) for (const l of wrap(sale.customer.province, width)) line(l);
+    if (sale.customer.country) for (const l of wrap(sale.customer.country, width)) line(l);
+    if (sale.customer.phone) line(`Tel. ${sale.customer.phone}`);
+    if (sale.customer.email) for (const l of wrap(sale.customer.email, width)) line(l);
   }
 
   // --- Líneas de producto ---
   sep();
+  if (isGift) {
+    out(CMD.ALIGN_CENTER);
+    out(CMD.BOLD_ON);
+    line('TICKET REGALO');
+    out(CMD.BOLD_OFF);
+    line('Importes ocultos');
+    out(CMD.ALIGN_LEFT);
+    sep();
+    for (const it of sale.items || []) {
+      for (const l of wrap(`${it.quantity}x ${it.name}`, width)) line(l);
+    }
+    finishDocument(chunks, out, cfg, width, enc, payload);
+    return Buffer.concat(chunks);
+  }
+
   for (const it of sale.items || []) {
     printItemLine(line, `${it.quantity}x ${it.name}`, formatEuro(it.lineTotal), width);
     if (it.discountPct > 0) line(`   dto. ${it.discountPct}%`);
@@ -485,11 +507,14 @@ function finishDocument(chunks, out, cfg, width, enc, payload) {
   out(CMD.ALIGN_CENTER);
   line(separator(width));
   if (store.footer) line(store.footer);
-  if (cfg.printQr && sale.qrText) {
+  if (payload.type === 'GIFT') {
+    line('No valido como factura');
+  }
+  if (payload.type !== 'GIFT' && cfg.printQr && sale.qrText) {
     out(CMD.LF);
     out(qrBytes(sale.qrText, 6));
   }
-  if (store.legalText) for (const l of wrap(store.legalText, width)) line(l);
+  if (payload.type !== 'GIFT' && store.legalText) for (const l of wrap(store.legalText, width)) line(l);
   if (payload.type === 'COPY') {
     out(CMD.BOLD_ON);
     line('COPIA - No válido como justificante fiscal');
