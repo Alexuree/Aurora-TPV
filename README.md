@@ -1,6 +1,6 @@
 # Aurora TPV
 
-**Terminal de punto de venta híbrido para retail, con dominio desacoplado, persistencia local/Supabase e integración de hardware ESC/POS mediante Electron.**
+**Terminal de punto de venta híbrido para retail, con dominio desacoplado, persistencia local/Supabase e integración de hardware ESC/POS mediante Electron utilizado en más de 2 comercios físicos reales en Madrid**
 
 Aurora TPV cubre el ciclo operativo de una tienda de mostrador: catálogo, venta táctil, cobro, caja, clientes, tickets, informes, auditoría, usuarios e impresión térmica. La solución puede ejecutarse inmediatamente en modo local o conectarse a PostgreSQL/Supabase para trabajar con una fuente de datos centralizada.
 
