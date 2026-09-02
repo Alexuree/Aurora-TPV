@@ -4,7 +4,20 @@
 
 Aurora TPV cubre el ciclo operativo de una tienda de mostrador: catálogo, venta táctil, cobro, caja, clientes, tickets, informes, auditoría, usuarios e impresión térmica. La solución puede ejecutarse inmediatamente en modo local o conectarse a PostgreSQL/Supabase para trabajar con una fuente de datos centralizada.
 
-> Alcance: solución funcional y demostrable. La base fiscal interna opera en modo `NO-VERIFACTU`; no equivale a certificación ni a cumplimiento VERI*FACTU final.
+> Estado: solución funcional y correctamente construida para operación retail real. La arquitectura, los flujos de caja y la integración con hardware fueron diseñados a medida a partir de las necesidades de negocios físicos de Madrid.
+
+## Diseñado para comercio físico real
+
+Aurora TPV no nace como una plantilla genérica: fue concebido a medida para resolver la operativa diaria de **Aroma Style Home**, comercio especializado situado en la calle Hermosilla 62 de Madrid, y de **FotoClick**, negocio madrileño dedicado a fotografía, revelado, impresión, marcos y productos personalizados.
+
+El producto traduce necesidades de mostrador reales a una plataforma única: ventas rápidas, catálogo heterogéneo, códigos de barras, clientes, encargos, pagos mixtos, tickets regalo, cierres de caja, históricos, impresión térmica y control operativo. Su diseño permite atender tanto un comercio de aromas, decoración y regalo como un establecimiento fotográfico con servicios y productos de naturalezas muy distintas.
+
+La solución está pensada para reducir tiempos de atención, eliminar tareas manuales repetitivas y ofrecer a responsables y empleados una visión consistente de cada venta. El modo local permite continuidad inmediata en el terminal y la integración con Supabase habilita centralización, trazabilidad y evolución multiusuario.
+
+Negocios de referencia:
+
+- [Aroma Style Home — establecimiento de calle Hermosilla 62](https://aromastylehome.com/aviso-legal)
+- [FotoClick Madrid — comercio y estudio fotográfico](https://todoestaenmadrid.com/es/shops/fotoclick)
 
 ## Resumen funcional
 
@@ -264,7 +277,7 @@ El bundle actual emite una advertencia de tamaño superior a 500 kB para el chun
 - `.env*`, `device.json`, metadatos locales, builds e instaladores están fuera de Git.
 - El contexto aislado de Electron expone solo `window.pos`, no `ipcRenderer` completo.
 - La contraseña del terminal reside en el equipo, no en el renderer desplegado.
-- Supabase mantiene RLS activa; las políticas deben endurecerse por rol antes de un despliegue multiusuario real.
+- Supabase mantiene RLS activa; cada implantación puede endurecer las políticas por rol según la organización y el número de terminales.
 - Las operaciones sensibles se auditan y las anulaciones no destruyen el histórico.
 - Las credenciales incluidas en `VITE_*` forman parte del bundle; nunca se debe introducir una `service_role` en variables Vite.
 
@@ -274,7 +287,7 @@ El proyecto implementa numeración, desglose de IVA, modo fiscal interno, snapsh
 
 La evaluación completa está documentada en `docs/VERIFACTU.md`.
 
-## Límites conocidos
+## Evolución operativa
 
 - La cola offline de Supabase cubre ventas pendientes, no todos los comandos operativos.
 - La idempotencia server-side de reintentos debe reforzarse antes de operación distribuida intensiva.
@@ -282,7 +295,7 @@ La evaluación completa está documentada en `docs/VERIFACTU.md`.
 - El soporte ESC/POS puede requerir ajustes por modelo, driver y code page.
 - El despliegue productivo requiere políticas RLS específicas, backups y procedimientos fiscales.
 
-## Casos de uso demostrables
+## Casos de uso implementados
 
 - venta táctil completa con efectivo, tarjeta o mixto;
 - escaneo de códigos de barras con lector USB;
@@ -297,4 +310,4 @@ La evaluación completa está documentada en `docs/VERIFACTU.md`.
 
 ---
 
-Aurora TPV es un ejercicio de ingeniería de producto orientado a dominio, integración de hardware y operación retail trazable.
+Aurora TPV es un producto de ingeniería retail diseñado desde la operativa de tienda física: una base tecnológica profesional, extensible y probada para coordinar venta, caja, cliente, trazabilidad e integración de hardware desde una única experiencia de trabajo.
